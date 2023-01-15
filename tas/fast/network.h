@@ -181,7 +181,8 @@ static inline uint16_t network_buf_tcpxsums(struct network_buf_handle *bh, uint8
   /*mb->l2_len = l2l;
   mb->l3_len = l3l;
   mb->l4_len = 0;*/
-  mb->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM | PKT_TX_TCP_CKSUM;
+  mb->ol_flags = RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM |
+    RTE_MBUF_F_TX_TCP_CKSUM;
 
   return network_ip_phdr_xsum(ip_s, ip_d, ip_proto, l3_paylen);
 }
@@ -190,7 +191,7 @@ static inline int network_buf_flowgroup(struct network_buf_handle *bh,
     uint16_t *fg)
 {
   struct rte_mbuf *mb = (struct rte_mbuf *) bh;
-  if (!(mb->ol_flags & PKT_RX_RSS_HASH)) {
+  if (!(mb->ol_flags & RTE_MBUF_F_RX_RSS_HASH)) {
     *fg = 0;
     return 0;
   }
