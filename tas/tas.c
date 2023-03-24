@@ -80,7 +80,7 @@ int main(int argc, char *argv[])
     res = EXIT_FAILURE;
     goto error_exit;
   }
-  fp_cores_max = config.fp_cores_max;
+  fp_cores_max = fp_cores_cur = config.fp_cores_max;
 
   /* allocate shared memory before dpdk grabs all huge pages */
   if (shm_preinit() != 0) {
@@ -211,7 +211,7 @@ static int start_threads(void)
   }
 
   /* start common threads */
-  RTE_LCORE_FOREACH_SLAVE(core) {
+  RTE_LCORE_FOREACH_WORKER(core) {
     if (threads_launched < fp_cores_max) {
       arg = (void *) (uintptr_t) threads_launched;
       if (rte_eal_remote_launch(common_thread, arg, core) != 0) {

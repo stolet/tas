@@ -98,7 +98,7 @@ static inline int timestamp_lessthaneq(struct qman_thread *t, uint32_t a,
 static inline int64_t rel_time(uint32_t cur_ts, uint32_t ts_in);
 
 
-int qman_thread_init(struct dataplane_context *ctx)
+int tas_qman_thread_init(struct dataplane_context *ctx)
 {
   struct qman_thread *t = &ctx->qman;
   unsigned i;
@@ -122,7 +122,7 @@ int qman_thread_init(struct dataplane_context *ctx)
   return 0;
 }
 
-uint32_t qman_timestamp(uint64_t cycles)
+uint32_t tas_qman_timestamp(uint64_t cycles)
 {
   static uint64_t freq = 0;
 
@@ -134,7 +134,7 @@ uint32_t qman_timestamp(uint64_t cycles)
   return cycles;
 }
 
-uint32_t qman_next_ts(struct qman_thread *t, uint32_t cur_ts)
+uint32_t tas_qman_next_ts(struct qman_thread *t, uint32_t cur_ts)
 {
   uint32_t ts = timestamp();
   uint32_t ret_ts = t->ts_virtual + (ts - t->ts_real);
@@ -162,7 +162,7 @@ uint32_t qman_next_ts(struct qman_thread *t, uint32_t cur_ts)
   return -1;
 }
 
-int qman_poll(struct qman_thread *t, unsigned num, unsigned *q_ids,
+int tas_qman_poll(struct qman_thread *t, unsigned num, unsigned *q_ids,
     uint16_t *q_bytes)
 {
   unsigned x, y;
@@ -181,7 +181,7 @@ int qman_poll(struct qman_thread *t, unsigned num, unsigned *q_ids,
   return x + y;
 }
 
-int qman_set(struct qman_thread *t, uint32_t id, uint32_t rate, uint32_t avail,
+int tas_qman_set(struct qman_thread *t, uint32_t id, uint32_t rate, uint32_t avail,
     uint16_t max_chunk, uint8_t flags)
 {
 #ifdef FLEXNIC_TRACE_QMAN
