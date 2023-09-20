@@ -16,12 +16,12 @@ class Config:
         self.s_cset_configs = []
         self.c_cset_configs = []
 
-        container0_cset = CSetConfig(
-            [i for i in range(1,26,2)], "0-1", "container0_server")
+        container0_cset = CSetConfig([1,3,5,7,9,11,13,15,17,19,21], 
+                                     "0-1", "container0_server")
         self.s_cset_configs.append(container0_cset)
 
-        container0_cset = CSetConfig(
-            [i for i in range(1,26,2)], "0-1", "container0_client")
+        container0_cset = CSetConfig([1,3,5,7,9,11,13,15,17,19,21], 
+                                     "0-1", "container0_client")
         self.c_cset_configs.append(container0_cset)
 
         # Server Machine
@@ -44,7 +44,7 @@ class Config:
                                             vtas_dir_virt=self.defaults.default_vtas_dir_virt,
                                             tas_dir=self.defaults.default_vtas_dir_bare,
                                             idx=0,
-                                            n_cores=6,
+                                            n_cores=11,
                                             memory=5,
                                             n_queues=10,
                                             cset="container0_server")
@@ -78,7 +78,7 @@ class Config:
                                             vtas_dir_virt=self.defaults.default_vtas_dir_virt,
                                             tas_dir=self.defaults.default_vtas_dir_bare,
                                             idx=0,
-                                            n_cores=6,
+                                            n_cores=11,
                                             memory=5,
                                             n_queues=10,
                                             cset="container0_client")
@@ -90,7 +90,7 @@ class Config:
                                       idx=0, vmid=0, stack=self.cstack,
                                       ip=self.s_container_configs[0].veth_container_ip, port=1234, ncores=5,
                                       msize=msize, mpending=1, nconns=100,
-                                      open_delay=0, max_msgs_conn=flow_len, max_pend_conns=16,
+                                      open_delay=0, max_msgs_conn=flow_len, max_pend_conns=1,
                                       bench_dir=self.defaults.default_obenchmark_dir_virt,
                                       tas_dir=self.defaults.default_otas_dir_virt)
         client0_config.hist_out = None

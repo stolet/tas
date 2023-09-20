@@ -68,8 +68,9 @@ class ContainerOVSDPDKClient(ContainerOVSDPDK):
         time.sleep(3)
 
   def run(self):
+    self.setup()
     self.start_containers()
-    self.setup(is_client=True)
+    self.setup_post(is_client=True)
     self.start_clients()
 
   def save_logs(self, exp_path):

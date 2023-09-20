@@ -41,6 +41,14 @@ class Node:
     pane.send_keys(cmd)
     time.sleep(1)
 
+  def interface_del_in_pane(self, pane, interface):
+    cmd = "sudo ip link delete {}".format(interface)
+    pane.send_keys(cmd)
+    time.sleep(1)
+
+  def interface_del(self, interface):
+    self.interface_del_in_pane(self.cleanup_pane, interface)
+
   def set_cset(self, cores_arg, mem, name, exclusive):
     if exclusive:
         cmd = "sudo cset set --cpu={} --mem={} --set={} --cpu_exclusive".format(cores_arg, mem, name)

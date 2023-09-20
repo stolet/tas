@@ -67,6 +67,7 @@ class ContainerOVSDPDKServer(ContainerOVSDPDK):
                 time.sleep(3)
 
     def run(self):
-        self.start_containers()
         self.setup()
+        self.start_containers()
+        self.setup_post(is_client=False)
         self.start_servers()
