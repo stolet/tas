@@ -19,6 +19,7 @@ class WindowManager:
         window_names.append(self.config.defaults.c_savelogs_pane)
         window_names.append(self.config.defaults.c_setup_pane)
         window_names.append(self.config.defaults.c_cleanup_pane)
+        window_names.append(self.config.defaults.c_container_pane)
         
         window_names.append(self.config.defaults.s_tas_pane)
         window_names.append(self.config.defaults.s_vm_pane)
@@ -28,6 +29,7 @@ class WindowManager:
         window_names.append(self.config.defaults.s_savelogs_pane)
         window_names.append(self.config.defaults.s_setup_pane)
         window_names.append(self.config.defaults.s_cleanup_pane)
+        window_names.append(self.config.defaults.s_container_pane)
 
         return window_names
 

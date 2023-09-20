@@ -12,10 +12,11 @@ class Container:
 
     def start(self):
         self.pane.send_keys('cd ' + self.container_config.manager_dir)
-        start_container_cmd = "sudo bash start-container.sh {} {} {} {} {} {}".format(
+        start_container_cmd = "sudo bash start-container.sh {} {} {} {} {} {} {}".format(
             self.machine_config.stack, self.container_config.id,
             self.container_config.n_cores, self.container_config.memory,
-            self.container_config.name, self.container_config.tas_dir)
+            self.container_config.name, self.container_config.tas_dir,
+            self.container_config.cset)
         self.pane.send_keys(start_container_cmd)
 
         print("Started Container")
