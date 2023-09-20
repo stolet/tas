@@ -31,6 +31,16 @@ class Node:
     for cset in self.cset_configs:
        self.destroy_cset(cset.name)
 
+  def add_ip_in_pane(self, pane, interface, ip):
+    cmd = "sudo ip addr add {} dev {}".format(ip, interface)
+    pane.send_keys(cmd)
+    time.sleep(1)
+
+  def interface_up_in_pane(self, pane, interface):
+    cmd = "sudo ip link set dev {} up".format(interface)
+    pane.send_keys(cmd)
+    time.sleep(1)
+
   def set_cset(self, cores_arg, mem, name, exclusive):
     if exclusive:
         cmd = "sudo cset set --cpu={} --mem={} --set={} --cpu_exclusive".format(cores_arg, mem, name)
@@ -263,3 +273,19 @@ class Node:
       cmd = "sudo bash ovsflow-add.sh {} {} {}".format(br_name, in_port, out_port)
       self.setup_pane.send_keys(cmd)
       time.sleep(2)
+
+  def ovsveth_add(self, br_name, veth_name_bridge, 
+                  veth_name_container, script_dir, 
+                  container_name, veth_bridge_ip,                                       
+                  veth_container_ip, n_queues=1):
+      
+      cmd = "cd {}".format(script_dir)
+      self.setup_pane.send_keys(cmd)
+      time.sleep(1)
+      cmd = "sudo bash ovsveth-add.sh {} {} {} {} {} {} {}".format(
+            br_name, veth_name_bridge, 
+            veth_name_container, n_queues, 
+            container_name, veth_bridge_ip, 
+            veth_container_ip)
+      self.setup_pane.send_keys(cmd)
+      time.sleep(1)

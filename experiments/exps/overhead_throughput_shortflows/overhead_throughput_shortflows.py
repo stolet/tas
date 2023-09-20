@@ -41,7 +41,7 @@ for n_r in range(n_runs):
     # experiments.append(bare_linux_exp)
     # experiments.append(ovs_linux_exp)
     # experiments.append(container_tas_exp)
-    experiments.append(container_virtuoso_exp)
-    # experiments.append(container_ovs_dpdk_exp)
+    # experiments.append(container_virtuoso_exp)
+    experiments.append(container_ovs_dpdk_exp)
 
 
