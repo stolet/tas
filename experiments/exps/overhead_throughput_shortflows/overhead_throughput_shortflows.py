@@ -6,11 +6,12 @@ from exps.overhead_throughput_shortflows.configs.ovs_tas import Config as OVSTas
 from exps.overhead_throughput_shortflows.configs.bare_linux import Config as BareLinuxConf
 from exps.overhead_throughput_shortflows.configs.ovs_linux import Config as OVSLinuxConf
 from exps.overhead_throughput_shortflows.configs.container_tas import Config as ContainerTasConf
+from exps.overhead_throughput_shortflows.configs.container_virtuoso import Config as ContainerVirtuosoConf
 
 experiments = []
 
 # flow_lens = [1,64,128,256,512,1024,2048]
-flow_lens = [1]
+flow_lens = [1024]
 n_runs = 1
 
 # Run these commands if running out of ephemeral ports: 
@@ -30,12 +31,14 @@ for n_r in range(n_runs):
     bare_linux_exp = exp.Experiment(BareLinuxConf(exp_name + "bare-linux", flow_len), name=exp_name)
     ovs_linux_exp = exp.Experiment(OVSLinuxConf(exp_name + "ovs-linux", flow_len), name=exp_name)
     container_tas_exp = exp.Experiment(ContainerTasConf(exp_name + "container-tas", flow_len), name=exp_name)
+    container_virtuoso_exp = exp.Experiment(ContainerVirtuosoConf(exp_name + "container-virtuoso", flow_len), name=exp_name)
 
     # experiments.append(tas_bare_exp)
     # experiments.append(tas_virt_exp)
     # experiments.append(ovs_tas_exp)
     # experiments.append(bare_linux_exp)
     # experiments.append(ovs_linux_exp)
-    experiments.append(container_tas_exp)
+    # experiments.append(container_tas_exp)
+    experiments.append(container_virtuoso_exp)
 
 
