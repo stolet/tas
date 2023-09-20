@@ -10,7 +10,7 @@ from exps.overhead_throughput_shortflows.configs.container_tas import Config as 
 experiments = []
 
 # flow_lens = [1,64,128,256,512,1024,2048]
-flow_lens = [1024, 1]
+flow_lens = [1]
 n_runs = 1
 
 # Run these commands if running out of ephemeral ports: 

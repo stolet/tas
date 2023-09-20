@@ -21,6 +21,10 @@ class Container:
 
         print("Started Container")
         time.sleep(3)
+
+        self.pane.send_keys("sudo docker start {}".format(
+            self.container_config.name))
+        time.sleep(1)
         if self.container_config.tunnel:
             self.add_dummy_intf(
                 "eth0", self.container_config.veth_container_ip, "C8:D7:4A:4E:47:50")
@@ -41,21 +45,26 @@ class Container:
         time.sleep(1)
 
     def shutdown(self):
-        self.pane.send_keys(suppress_history=False, cmd='whoami')
-        time.sleep(1)
+        pass
+        # self.pane.send_keys(suppress_history=False, cmd='whoami')
+        # time.sleep(1)
 
-        captured_pane = self.pane.capture_pane()
-        user = captured_pane[len(captured_pane) - 2]
+        # captured_pane = self.pane.capture_pane()
+        # user = captured_pane[len(captured_pane) - 2]
 
-        # This means we are in the container, so we don't
-        # accidentally exit machine
-        if user == 'tas':
-            self.pane.send_keys(suppress_history=False, cmd='exit')
-            time.sleep(3)
+        # # This means we are in the container, so we don't
+        # # accidentally exit machine
+        # if user == 'tas':
+        #     self.pane.send_keys(suppress_history=False, cmd='exit')
+        #     time.sleep(3)
 
-        kill_container_cmd = "sudo docker container kill {}".format(
-            self.container_config.name)
-        self.pane.send_keys(kill_container_cmd)
-        prune_container_cmd = "sudo docker container prune -f"
-        self.pane.send_keys(prune_container_cmd)
-        time.sleep(2)
+        # kill_container_cmd = "sudo docker stop {}".format(
+        #     self.container_config.name)
+        # self.pane.send_keys(kill_container_cmd)
+        # time.sleep(10)
+        # kill_container_cmd = "sudo docker remove {}".format(
+        #     self.container_config.name)
+        # time.sleep(1)
+        # prune_container_cmd = "sudo docker container prune -f"
+        # self.pane.send_keys(prune_container_cmd)
+        # time.sleep(2)
