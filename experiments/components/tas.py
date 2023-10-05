@@ -26,7 +26,8 @@ class TAS:
                 save_log=True,
                 clean=False,
                 gdb=False,
-                cset=self.tas_config.cset)
+                cset=self.tas_config.cset
+                core_args=self.cset_configs[self.tas_config.cset].cores_arg)
 
     def run_virt(self):
         ssh_com = utils.get_ssh_command(self.machine_config, self.vm_config)

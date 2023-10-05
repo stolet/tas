@@ -45,8 +45,8 @@ class Server:
             cmd += 'LD_PRELOAD=' + self.server_config.lib_so + ' '
 
         if cset:
-            cmd += "cset proc --set={} --exec ".format(self.server_config.cset)
-            cmd += self.server_config.exec_file + ' -- '
+            cmd += "taskset {} ".format(self.cset_configs[self.server_config.cset].cores_arg)
+            cmd += self.server_config.exec_file + ' '
             cmd += self.server_config.args + ' | tee ' + self.server_config.out
         else:
             cmd += self.server_config.exec_file + ' ' + \

@@ -48,8 +48,8 @@ class Client:
             cmd += 'LD_PRELOAD=' + self.client_config.lib_so + ' '
 
         if cset:
-            cmd += "cset proc --set={} --exec ".format(self.client_config.cset)
-            cmd += self.client_config.exec_file + ' -- '
+            cmd += "taskset {} ".format(self.cset_configs[self.client_config.cset].cores_arg)
+            cmd += self.client_config.exec_file + ' '
             cmd += self.client_config.args + ' | tee ' + self.client_config.out
         else:
             cmd += self.client_config.exec_file + ' ' + \

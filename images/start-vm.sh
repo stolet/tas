@@ -8,7 +8,8 @@ interface=$3
 n_cores=$4
 memory=$5 # In Gigabytes
 cset=$6
-n_queues=$7
+core_args=$7
+n_queues=$8
 
 stty intr ^]
 stty susp ^]
@@ -37,7 +38,7 @@ echo $alt_mac
 # Note: vectors=<2 + 2 * queues_nr>
 
 if [[ "$stack" == 'virt-tas' ]]; then
-  sudo cset proc --set=$cset --exec \
+  sudo taskset $core_args \
   qemu-system-x86_64 -- \
     -nographic -monitor none -serial stdio \
     -machine accel=kvm,type=q35 \
@@ -52,7 +53,7 @@ if [[ "$stack" == 'virt-tas' ]]; then
     -drive if=virtio,format=raw,file="seed.img" \
     ;
 elif [[ "$stack" == 'virt-linux' ]]; then
-  sudo cset proc --set=$cset --exec \
+  sudo taskset $core_args \
   qemu-system-x86_64 -- \
       -nographic -monitor none -serial stdio \
       -machine accel=kvm,type=q35 \
@@ -68,7 +69,7 @@ elif [[ "$stack" == 'virt-linux' ]]; then
       -drive if=virtio,format=raw,file="seed.img" \
       ;
 elif [[ "$stack" == 'ovs-linux' ]]; then
-  sudo cset proc --set=$cset --exec \
+  sudo taskset $core_args \
   qemu-system-x86_64 -- \
     -nographic -monitor none -serial stdio \
     -machine accel=kvm,type=q35 \
@@ -87,7 +88,7 @@ elif [[ "$stack" == 'ovs-linux' ]]; then
     -drive if=virtio,format=raw,file="seed.img" \
     ;
 elif [[ "$stack" == 'ovs-tas' ]]; then
-  sudo cset proc --set=$cset --exec \
+  sudo taskset $core_args \
   qemu-system-x86_64 -- \
     -nographic -monitor none -serial stdio \
     -machine accel=kvm,type=q35 \
@@ -106,7 +107,7 @@ elif [[ "$stack" == 'ovs-tas' ]]; then
     -drive if=virtio,format=raw,file="seed.img" \
     ;
 elif [[ "$stack" == 'tap-tas' ]]; then
-  sudo cset proc --set=$cset --exec \
+  sudo taskset $core_args \
   qemu-system-x86_64 -- \
     -nographic -monitor none -serial stdio \
     -machine accel=kvm,type=q35 \
@@ -124,7 +125,7 @@ elif [[ "$stack" == 'tap-tas' ]]; then
     -drive if=virtio,format=raw,file="seed.img" \
     ;
 elif [[ "$stack" == 'gre' ]]; then
-  sudo cset proc --set=$cset --exec \
+  sudo taskset $core_args \
   qemu-system-x86_64 -- \
     -nographic -monitor none -serial stdio \
     -machine accel=kvm,type=q35 \
