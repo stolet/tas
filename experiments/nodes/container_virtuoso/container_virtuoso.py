@@ -77,6 +77,7 @@ class ContainerVirtuoso(Node):
         self.tas = TAS(defaults=self.defaults,
                     machine_config=self.machine_config,
                     tas_config=self.tas_config,
+                    cset_configs=self.cset_configs,
                     wmanager=self.wmanager)
         self.tas.run_bare()
         time.sleep(10)

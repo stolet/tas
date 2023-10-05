@@ -34,6 +34,7 @@ class ContainerTasClient(ContainerTas):
                                 self.machine_config,
                                 client_config,
                                 container_config,
+                                self.cset_configs,
                                 self.wmanager)
                 self.clients.append(client)
                 client.run_virt(True, True)

@@ -4,11 +4,12 @@ import time
 class Server:
     
     def __init__(self, defaults, machine_config, 
-            server_config, vm_config, wmanager):
+            server_config, vm_config, cset_configs, wmanager):
         self.defaults = defaults
         self.machine_config = machine_config
         self.server_config = server_config
         self.vm_config = vm_config
+        self.cset_configs = cset_configs
         self.wmanager = wmanager
         self.log_paths = []
         self.pane = self.wmanager.add_new_pane(server_config.pane,

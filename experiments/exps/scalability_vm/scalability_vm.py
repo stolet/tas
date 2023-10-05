@@ -15,6 +15,6 @@ for n_r in range(n_runs):
     ovs_tas_exp = exp.Experiment(OVSTasConf(exp_name + "ovs-tas", n_v), name=exp_name)
     ovs_linux_exp = exp.Experiment(OVSLinuxConf(exp_name + "ovs-linux", n_v), name=exp_name)
 
-    experiments.append(ovs_linux_exp)
+    # experiments.append(ovs_linux_exp)
     experiments.append(ovs_tas_exp)
-    experiments.append(tas_virt_exp)
+    # experiments.append(tas_virt_exp)

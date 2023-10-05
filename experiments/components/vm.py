@@ -2,10 +2,11 @@ import time
 
 class VM:
 
-    def __init__(self, defaults, machine_config, vm_config, wmanager):
+    def __init__(self, defaults, machine_config, vm_config, cset_configs, wmanager):
         self.defaults = defaults
         self.machine_config = machine_config
         self.vm_config = vm_config
+        self.cset_configs = cset_configs
         self.wmanager = wmanager
         self.pane = self.wmanager.add_new_pane(vm_config.pane,
                 machine_config.is_remote)
@@ -16,13 +17,16 @@ class VM:
             start_vm_cmd = "sudo bash start-vm.sh {} {} {} {} {} {}".format(
                     self.machine_config.stack, self.vm_config.id,
                     self.machine_config.interface, self.vm_config.n_cores, 
-                    self.vm_config.memory, self.vm_config.cset)
+                    self.vm_config.memory, self.vm_config.cset, 
+                    self.cset_configs[self.vm_config.cset].cores_arg)
         else:
             start_vm_cmd = "sudo bash start-vm.sh {} {} {} {} {} {} {}".format(
                     self.machine_config.stack, self.vm_config.id,
                     self.machine_config.interface, self.vm_config.n_cores,
                     self.vm_config.memory, 
-                    self.vm_config.cset, self.vm_config.n_queues)
+                    self.vm_config.cset, 
+                    self.cset_configs[self.vm_config.cset].cores_arg,
+                    self.vm_config.n_queues)
         self.pane.send_keys(start_vm_cmd)
        
         print("Started VM")

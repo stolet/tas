@@ -22,6 +22,7 @@ class BareLinuxServer(BareLinux):
               self.machine_config,
               server_config, 
               None,
+              self.cset_configs,
               self.wmanager)
       server.run_bare(True, False)
       time.sleep(3)

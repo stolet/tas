@@ -52,13 +52,14 @@ class VirtTasServer(VirtTas):
                 self.machine_config,
                 server_config, 
                 vm_config,
+                self.cset_configs,
                 self.wmanager)
         server.run_virt(True, True)
         time.sleep(3)
 
   def run(self):
     self.setup()
-    tas = TAS(self.defaults, self.machine_config, self.tas_config, self.wmanager)
+    tas = TAS(self.defaults, self.machine_config, self.tas_config, self.cset_configs, self.wmanager)
     proxyh = ProxyHost(self.defaults, self.machine_config, self.proxyh_config, self.wmanager)
 
     tas.run_bare()

@@ -39,7 +39,7 @@ echo $alt_mac
 
 if [[ "$stack" == 'virt-tas' ]]; then
   sudo taskset $core_args \
-  qemu-system-x86_64 -- \
+  qemu-system-x86_64 \
     -nographic -monitor none -serial stdio \
     -machine accel=kvm,type=q35 \
     -cpu host \
@@ -54,7 +54,7 @@ if [[ "$stack" == 'virt-tas' ]]; then
     ;
 elif [[ "$stack" == 'virt-linux' ]]; then
   sudo taskset $core_args \
-  qemu-system-x86_64 -- \
+  qemu-system-x86_64 \
       -nographic -monitor none -serial stdio \
       -machine accel=kvm,type=q35 \
       -cpu host \
@@ -70,7 +70,7 @@ elif [[ "$stack" == 'virt-linux' ]]; then
       ;
 elif [[ "$stack" == 'ovs-linux' ]]; then
   sudo taskset $core_args \
-  qemu-system-x86_64 -- \
+  qemu-system-x86_64 \
     -nographic -monitor none -serial stdio \
     -machine accel=kvm,type=q35 \
     -cpu host \
@@ -89,7 +89,7 @@ elif [[ "$stack" == 'ovs-linux' ]]; then
     ;
 elif [[ "$stack" == 'ovs-tas' ]]; then
   sudo taskset $core_args \
-  qemu-system-x86_64 -- \
+  qemu-system-x86_64 \
     -nographic -monitor none -serial stdio \
     -machine accel=kvm,type=q35 \
     -cpu host \
@@ -108,7 +108,7 @@ elif [[ "$stack" == 'ovs-tas' ]]; then
     ;
 elif [[ "$stack" == 'tap-tas' ]]; then
   sudo taskset $core_args \
-  qemu-system-x86_64 -- \
+  qemu-system-x86_64 \
     -nographic -monitor none -serial stdio \
     -machine accel=kvm,type=q35 \
     -cpu host \
@@ -126,7 +126,7 @@ elif [[ "$stack" == 'tap-tas' ]]; then
     ;
 elif [[ "$stack" == 'gre' ]]; then
   sudo taskset $core_args \
-  qemu-system-x86_64 -- \
+  qemu-system-x86_64 \
     -nographic -monitor none -serial stdio \
     -machine accel=kvm,type=q35 \
     -cpu host \

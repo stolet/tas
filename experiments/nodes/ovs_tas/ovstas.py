@@ -124,7 +124,8 @@ class OvsTas(Node):
       
       tas = TAS(defaults=self.defaults, 
         machine_config=self.machine_config, 
-        tas_config=tas_config, 
+        tas_config=tas_config,
+        cset_configs=self.cset_configs,
         vm_config=self.vm_configs[i],
         wmanager=self.wmanager)
       
@@ -144,7 +145,7 @@ class OvsTas(Node):
   def start_vms(self):
     threads = []
     for vm_config in self.vm_configs:
-      vm = VM(self.defaults, self.machine_config, vm_config, self.wmanager)
+      vm = VM(self.defaults, self.machine_config, vm_config, self.cset_configs, self.wmanager)
       self.vms.append(vm)
       vm_thread = threading.Thread(target=self.start_vm, args=(vm, vm_config))
       threads.append(vm_thread)

@@ -5,10 +5,11 @@ import os
 class TAS:
     
     def __init__(self, defaults, machine_config, 
-            tas_config, wmanager, vm_config=None):
+            tas_config, wmanager, cset_configs, vm_config=None):
         self.defaults = defaults
         self.machine_config = machine_config
         self.tas_config = tas_config
+        self.cset_configs = cset_configs
         self.vm_config = vm_config
         self.wmanager = wmanager
         self.pane = self.wmanager.add_new_pane(tas_config.pane, 
@@ -26,7 +27,7 @@ class TAS:
                 save_log=True,
                 clean=False,
                 gdb=False,
-                cset=self.tas_config.cset
+                cset=self.tas_config.cset,
                 core_args=self.cset_configs[self.tas_config.cset].cores_arg)
 
     def run_virt(self):

@@ -26,6 +26,7 @@ class VirtLinuxServer(VirtLinux):
                 self.machine_config,
                 server_config, 
                 vm_config,
+                self.cset_configs,
                 self.wmanager)
         server.run_virt(False, False)
         time.sleep(3)

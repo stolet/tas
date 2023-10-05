@@ -5,11 +5,12 @@ import utils
 
 class Client:
     
-    def __init__(self, defaults, machine_config, client_config, vm_config, wmanager):
+    def __init__(self, defaults, machine_config, client_config, vm_config, cset_configs, wmanager):
         self.defaults = defaults
         self.machine_config = machine_config
         self.client_config = client_config
         self.vm_config = vm_config
+        self.cset_configs = cset_configs
         self.wmanager = wmanager
         self.pane = self.wmanager.add_new_pane(client_config.pane, 
                 machine_config.is_remote)

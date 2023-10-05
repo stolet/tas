@@ -43,7 +43,7 @@ class VirtLinux(Node):
   def start_vms(self):
     threads = []
     for vm_config in self.vm_configs:
-      vm = VM(self.defaults, self.machine_config, vm_config, self.wmanager)
+      vm = VM(self.defaults, self.machine_config, vm_config, self.cset_configs, self.wmanager)
       self.vms.append(vm)
       vm_thread = threading.Thread(target=self.start_vm, args=(vm, vm_config))
       threads.append(vm_thread)

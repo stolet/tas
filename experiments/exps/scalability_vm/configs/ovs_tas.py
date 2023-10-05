@@ -13,8 +13,8 @@ class Config:
         vm_cores = 2
         
         # Configure Csets
-        pmd_mask = "0x555"
-        ovs_cores = [0,2,4,6,8,10]
+        pmd_mask = "0x5555"
+        ovs_cores = [0,2,4,6,8,10,12,14]
 
         self.s_cset_configs = []
         self.c_cset_configs = []

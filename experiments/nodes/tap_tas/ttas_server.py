@@ -27,6 +27,7 @@ class TapTasServer(TapTas):
                 self.machine_config,
                 server_config, 
                 vm_config,
+                self.cset_configs,
                 self.wmanager)
         self.servers.append(server)
         server.run_virt(False, True)

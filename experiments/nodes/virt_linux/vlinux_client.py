@@ -23,7 +23,8 @@ class VirtLinuxClient(VirtLinux):
     client = Client(self.defaults, 
         self.machine_config,
         client_config, 
-        vm_config, 
+        vm_config,
+        self.cset_configs,
         self.wmanager)
     self.clients.append(client)
     client.run_virt(False, False)

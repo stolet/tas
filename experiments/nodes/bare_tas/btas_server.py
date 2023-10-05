@@ -23,13 +23,15 @@ class BareTasServer(BareTas):
               self.machine_config,
               server_config, 
               None,
+              self.cset_configs,
               self.wmanager)
       server.run_bare(True, True)
       time.sleep(3)
 
   def run(self):
     self.setup()
-    tas = TAS(self.defaults, self.machine_config, self.tas_config, self.wmanager)
+    tas = TAS(self.defaults, self.machine_config, 
+              self.tas_config, self.cset_configs, self.wmanager)
     
     tas.run_bare()
     time.sleep(5)

@@ -49,7 +49,8 @@ class VirtTasClient(VirtTas):
     client = Client(self.defaults, 
         self.machine_config,
         client_config, 
-        vm_config, 
+        vm_config,
+        self.cset_configs,
         self.wmanager)
     self.clients.append(client)
     client.run_virt(True, True)
@@ -71,7 +72,7 @@ class VirtTasClient(VirtTas):
   def run(self):
     self.setup()
     tas = TAS(self.defaults, self.machine_config, 
-        self.tas_config, self.wmanager)
+        self.tas_config, self.cset_configs, self.wmanager)
     proxyh = ProxyHost(self.defaults, self.machine_config, 
         self.proxyh_config, self.wmanager)
 

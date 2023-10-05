@@ -62,6 +62,7 @@ class ContainerOVSDPDKServer(ContainerOVSDPDK):
                                 self.machine_config,
                                 server_config,
                                 container_config,
+                                self.cset_configs,
                                 self.wmanager)
                 server.run_virt(False, False)
                 time.sleep(3)

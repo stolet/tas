@@ -22,7 +22,8 @@ class VTasBareClient(VTasBare):
       client = Client(self.defaults, 
           self.machine_config,
           client_config, 
-          None, 
+          None,
+          self.cset_configs,
           self.wmanager)
       client.pane.send_keys("export TAS_GROUP={}".format(client_config.groupid))
       self.clients.append(client)
@@ -44,7 +45,7 @@ class VTasBareClient(VTasBare):
   def run(self):
     self.setup()
     self.tas = TAS(self.defaults, self.machine_config, 
-        self.tas_config, self.wmanager)
+        self.tas_config, self.cset_configs, self.wmanager)
     
     self.tas.run_bare()
     time.sleep(5)

@@ -36,6 +36,7 @@ class OvsLinuxClient(OvsLinux):
         self.machine_config,
         client_config, 
         vm_config, 
+        self.cset_configs,
         self.wmanager)
     self.clients.append(client)
     client.run_virt(True, False)

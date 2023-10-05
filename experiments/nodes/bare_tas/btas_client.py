@@ -23,6 +23,7 @@ class BareTasClient(BareTas):
         self.machine_config,
         client_config, 
         None, 
+        self.cset_configs,
         self.wmanager)
     self.clients.append(client)
     client.run_bare(True, True)
@@ -43,7 +44,7 @@ class BareTasClient(BareTas):
   def run(self):
     self.setup()
     tas = TAS(self.defaults, self.machine_config, 
-        self.tas_config, self.wmanager)
+        self.tas_config, self.cset_configs, self.wmanager)
     
     tas.run_bare()
     time.sleep(5)

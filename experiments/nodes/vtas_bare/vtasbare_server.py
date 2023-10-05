@@ -23,6 +23,7 @@ class VTasBareServer(VTasBare):
               self.machine_config,
               server_config, 
               None,
+              self.cset_configs,
               self.wmanager)
       server.pane.send_keys("export TAS_GROUP={}".format(server_config.groupid))
       server.run_bare(True, True)
@@ -30,7 +31,7 @@ class VTasBareServer(VTasBare):
 
   def run(self):
     self.setup()
-    tas = TAS(self.defaults, self.machine_config, self.tas_config, self.wmanager)
+    tas = TAS(self.defaults, self.machine_config, self.tas_config, self.cset_configs, self.wmanager)
     
     tas.run_bare()
     time.sleep(5)

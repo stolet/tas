@@ -22,7 +22,8 @@ class BareLinuxClient(BareLinux):
     client = Client(self.defaults, 
         self.machine_config,
         client_config, 
-        None, 
+        None,
+        self.cset_configs,
         self.wmanager)
     self.clients.append(client)
     client.run_bare(True, False)

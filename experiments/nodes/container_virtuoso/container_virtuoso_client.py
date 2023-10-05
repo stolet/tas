@@ -59,6 +59,7 @@ class ContainerVirtuosoClient(ContainerVirtuoso):
                                 self.machine_config,
                                 client_config,
                                 container_config,
+                                self.cset_configs,
                                 self.wmanager)
                 client.pane.send_keys(
                     "export TAS_GROUP={}".format(client_config.groupid))
