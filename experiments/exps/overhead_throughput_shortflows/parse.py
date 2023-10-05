@@ -105,15 +105,20 @@ def save_dat_file(data, fname):
   f = open(fname, "w+")
   header = "flowlen " + \
       "bare-tas-avg virt-tas-avg ovs-tas-avg bare-linux-avg ovs-linux-avg " + \
-      "bare-tas-std virt-tas-std ovs-tas-std bare-linux-std ovs-linux-std\n"
+      "container-tas-avg container-virtuoso-avg container-linux-avg " + \
+      "bare-tas-std virt-tas-std ovs-tas-std bare-linux-std ovs-linux-std " + \
+      "container-tas-std container-virtuoso-std container-linux-std\n"
+
   f.write(header)
   for dp in data:
-    f.write("{} {} {} {} {} {} {} {} {} {} {}\n".format(
+    f.write("{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}\n".format(
       dp["flowlen"],
       dp["bare-tas"]["tp"], dp["virt-tas"]["tp"],
       dp["ovs-tas"]["tp"], dp["bare-linux"]["tp"], dp["ovs-linux"]["tp"],
+      dp["container-tas"]["tp"], dp["container-virtuoso"]["tp"], dp["container-ovsdpdk"]["tp"],
       dp["bare-tas"]["std"], dp["virt-tas"]["std"],
-      dp["ovs-tas"]["std"], dp["bare-linux"]["std"], dp["ovs-linux"]["std"]))
+      dp["ovs-tas"]["std"], dp["bare-linux"]["std"], dp["ovs-linux"]["std"],
+      dp["container-tas"]["std"], dp["container-virtuoso"]["std"], dp["container-ovsdpdk"]["std"],))
 
 def main():
   parsed_md = parse_metadata()

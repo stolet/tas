@@ -12,7 +12,6 @@ def get_ssh_command(machine_config, vm_config):
     return ssh_com
 
 def get_scp_command(machine_config, vm_config, src_path, save_path):
-    ip = vm_config.vm_ip
     idx = vm_config.id
     stack = machine_config.stack
     if stack == "virt-tas" or stack == "ovs-tas" or stack == "ovs-linux":
@@ -20,6 +19,7 @@ def get_scp_command(machine_config, vm_config, src_path, save_path):
     elif stack == "container-ovsdpdk" or stack == "container-tas" or stack == "container-virtuoso":
         ssh_com = "sudo docker cp {}:{} {}".format(vm_config.name, src_path, save_path)
     else:
+        ip = vm_config.vm_ip
         ssh_com = "scp tas@{}:{} {}".format(ip, src_path, save_path)
     
     return ssh_com

@@ -34,11 +34,9 @@ class ContainerTas(Node):
 
     def cleanup(self):
         super().cleanup()
-        if self.tas:
-            self.tas.cleanup(self.cleanup_pane)
-        else:
-            remove_tas_socket_com = "find {} -name \"*flexnic_os*\" | xargs rm -r".format(self.tas_config.project_dir)
-            self.cleanup_pane.send_keys(remove_tas_socket_com)
+
+        remove_tas_socket_com = "find {} -name \"*flexnic_os*\" | xargs rm -r".format(self.tas_config.project_dir)
+        self.cleanup_pane.send_keys(remove_tas_socket_com)
 
         for config in self.container_configs:
             self.cleanup_pane.send_keys(suppress_history=False, cmd='whoami')

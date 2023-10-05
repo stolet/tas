@@ -29,6 +29,11 @@ class Container:
             self.add_dummy_intf(
                 "eth0", self.container_config.veth_container_ip, "C8:D7:4A:4E:47:50")
         self.enter_container()
+        self.pane.send_keys("sudo sysctl -w net.ipv4.tcp_tw_reuse=1")
+        time.sleep(1)
+        self.pane.send_keys("sudo sysctl -w net.ipv4.tcp_fin_timeout=1")
+        time.sleep(1)
+
 
     def enter_container(self):
         enter_container_cmd = "sudo docker exec -it {} bash".format(

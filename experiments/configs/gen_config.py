@@ -302,7 +302,7 @@ class ClientConfig:
             self.args = '{} {} {} foo {} {} {} {} {} {} {} {}'.format(ip, port, ncores, \
                 msize, mpending, nconns, open_delay, \
                 max_msgs_conn, max_pend_conns, \
-                self.out_dir + "/", self.out_file)
+                self.out_dir + "/", self.hist_file)
 
         self.cset = cset
         self.groupid = groupid
