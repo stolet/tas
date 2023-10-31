@@ -40,6 +40,7 @@ echo $alt_mac
 if [[ "$stack" == 'virt-tas' ]]; then
   sudo taskset $core_args \
   qemu-system-x86_64 \
+    -snapshot \
     -nographic -monitor none -serial stdio \
     -machine accel=kvm,type=q35 \
     -cpu host \
@@ -55,12 +56,12 @@ if [[ "$stack" == 'virt-tas' ]]; then
 elif [[ "$stack" == 'virt-linux' ]]; then
   sudo taskset $core_args \
   qemu-system-x86_64 \
+      -snapshot \
       -nographic -monitor none -serial stdio \
       -machine accel=kvm,type=q35 \
       -cpu host \
       -smp $n_cores \
       -m ${memory}G \
-      -snapshot \
       -netdev user,id=net0 \
       -device virtio-net-pci,netdev=net0 \
       -netdev tap,ifname=$tap,script=no,downscript=no,vhost=on,id=net1 \
@@ -71,12 +72,12 @@ elif [[ "$stack" == 'virt-linux' ]]; then
 elif [[ "$stack" == 'ovs-linux' ]]; then
   sudo taskset $core_args \
   qemu-system-x86_64 \
+    -snapshot \
     -nographic -monitor none -serial stdio \
     -machine accel=kvm,type=q35 \
     -cpu host \
     -smp $n_cores \
     -m ${memory}G \
-    -snapshot \
     -netdev user,id=net0,hostfwd=tcp::222${vm_id}-:22 \
     -device virtio-net-pci,netdev=net0 \
     -chardev socket,id=char0,path=/usr/local/var/run/openvswitch/$vhost \
@@ -88,14 +89,14 @@ elif [[ "$stack" == 'ovs-linux' ]]; then
     -drive if=virtio,format=raw,file="seed.img" \
     ;
 elif [[ "$stack" == 'ovs-tas' ]]; then
-  sudo taskset $core_args \
+  sudo taskset -c $core_args \
   qemu-system-x86_64 \
+    -snapshot \
     -nographic -monitor none -serial stdio \
     -machine accel=kvm,type=q35 \
     -cpu host \
     -smp $n_cores \
     -m ${memory}G \
-    -snapshot \
     -netdev user,id=net0,hostfwd=tcp::222${vm_id}-:22 \
     -device virtio-net-pci,netdev=net0 \
     -chardev socket,id=char0,path=/usr/local/var/run/openvswitch/$vhost \
@@ -109,12 +110,12 @@ elif [[ "$stack" == 'ovs-tas' ]]; then
 elif [[ "$stack" == 'tap-tas' ]]; then
   sudo taskset $core_args \
   qemu-system-x86_64 \
+    -snapshot \
     -nographic -monitor none -serial stdio \
     -machine accel=kvm,type=q35 \
     -cpu host \
     -smp $n_cores \
     -m ${memory}G \
-    -snapshot \
     -netdev user,id=net0 \
     -device virtio-net-pci,netdev=net0 \
     -netdev tap,ifname=$tap,script=no,downscript=no,vhost=on,id=net1 \
@@ -127,12 +128,12 @@ elif [[ "$stack" == 'tap-tas' ]]; then
 elif [[ "$stack" == 'gre' ]]; then
   sudo taskset $core_args \
   qemu-system-x86_64 \
+    -snapshot \
     -nographic -monitor none -serial stdio \
     -machine accel=kvm,type=q35 \
     -cpu host \
     -smp $n_cores \
     -m ${memory}G \
-    -snapshot \
     -netdev user,id=net0 \
     -device virtio-net-pci,netdev=net0 \
     -netdev bridge,br=br2,id=net1 \

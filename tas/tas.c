@@ -290,6 +290,11 @@ struct budget_statistics get_budget_stats(int vmid, int ctxid)
   return stats;
 }
 
+uint64_t get_budget_delta(int vmid, int ctxid)
+{
+  return config.bu_max_budget - ctxs[ctxid]->budgets[vmid].budget;
+}
+
 void boost_budget(int vmid, int ctxid, int64_t incr)
 {
   uint64_t old_budget, new_budget, max_budget;
