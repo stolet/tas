@@ -178,7 +178,6 @@ int fast_appctx_poll_fetch_active(struct dataplane_context *ctx, uint16_t max,
 {
   uint16_t temp_k, k = 0;
   uint32_t vmid;
-  unsigned total_prev;
   struct polled_vm *act_vm;
 
   int oob_i = 0, oob_n;
@@ -190,15 +189,8 @@ int fast_appctx_poll_fetch_active(struct dataplane_context *ctx, uint16_t max,
 
     if (ctx->budgets[vmid].budget > 0)
     {
-      total_prev = *total;
       fast_appctx_poll_fetch_active_vm(ctx, act_vm, &k, max, total, 
           n_rem, rem_ctxs, aqes);
-      
-      if (*total > total_prev)
-      {
-        ctx->vm_counters[vmid] += 1;
-        ctx->counters_total += 1;
-      }
     } else
     {
       oob_vms[oob_i] = vmid;
@@ -292,7 +284,7 @@ void inline fast_appctx_poll_fetch_all_vm(struct dataplane_context *ctx,
 int fast_appctx_poll_fetch_all(struct dataplane_context *ctx, uint16_t max,
     unsigned *total, void *aqes[BATCH_SIZE])
 {
-  unsigned i_v, total_prev;
+  unsigned i_v;
   uint16_t temp_k, k = 0;
   uint32_t vmid;
 
@@ -305,15 +297,7 @@ int fast_appctx_poll_fetch_all(struct dataplane_context *ctx, uint16_t max,
 
     if (ctx->budgets[vmid].budget > 0)
     {
-      total_prev = *total;
       fast_appctx_poll_fetch_all_vm(ctx, vmid, &k, max, total, aqes);
-
-      if (*total > total_prev)
-      {
-        ctx->vm_counters[vmid] += 1;
-        ctx->counters_total += 1;
-      }
-
     } else 
     {
       oob_vms[oob_i] = vmid;
@@ -379,6 +363,9 @@ static int fast_appctx_poll_fetch(struct dataplane_context *ctx, uint32_t actx_i
   actx->tx_head += sizeof(*atx);
   if (actx->tx_head >= actx->tx_len)
     actx->tx_head -= actx->tx_len;
+
+  ctx->vm_counters[vm_id] += atx->msg.connupdate.tx_bump;
+  ctx->counters_total += atx->msg.connupdate.tx_bump;
 
   return 0;
 }
