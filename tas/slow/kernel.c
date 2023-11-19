@@ -204,11 +204,11 @@ static void update_budget(int threads_launched)
 {
   int vmid, ctxid;
   uint64_t cur_ts;
-  int64_t incr;
-  uint64_t total_budget;
-  uint64_t delta_weight;
-  uint64_t deltas_sum;
-  uint64_t deltas[threads_launched];
+  int64_t incr, weighted_incr;
+  int64_t total_budget;
+  double delta_weight;
+  double deltas_sum;
+  double deltas[threads_launched];
 
   cur_ts = util_rdtsc();
   total_budget = config.bu_boost * (cur_ts - last_bu_update_ts);
@@ -228,12 +228,13 @@ static void update_budget(int threads_launched)
     for (ctxid = 0; ctxid < threads_launched; ctxid++)
     {
       if (deltas_sum == 0) {
-        delta_weight = 1 / threads_launched;
+        delta_weight = 1.0 / threads_launched;
       } else {
         delta_weight = deltas[ctxid] / deltas_sum;
       }
   
-      boost_budget(vmid, ctxid, incr * delta_weight);
+      weighted_incr = incr * delta_weight;
+      boost_budget(vmid, ctxid, weighted_incr);
     }
   }
 
