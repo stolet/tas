@@ -47,7 +47,7 @@ def compile_and_run(pane, comp_dir, comp_cmd, clean_cmd,
         cmd = 'sudo valgrind --leak-check=yes ' + exec_file + ' ' + args
     else:
         if cset is not None:
-            cmd = "sudo taskset {} {} {}".format(core_args, exec_file, args)
+            cmd = "sudo taskset -c {} {} {}".format(core_args, exec_file, args)
         else:
             cmd = 'sudo ' + exec_file + ' ' + args
 

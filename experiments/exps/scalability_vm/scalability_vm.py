@@ -6,7 +6,7 @@ from exps.scalability_vm.configs.ovs_linux import Config as OVSLinuxConf
 
 experiments = []
 n_runs = 1
-n_vms = [3,6,9,12,15,18]
+n_vms = [3, 6, 9, 12, 15, 18]
 
 for n_r in range(n_runs):
   for n_v in n_vms:

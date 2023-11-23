@@ -13,14 +13,15 @@ class VM:
     
     def start(self):
         self.pane.send_keys('cd ' + self.vm_config.manager_dir)
+        
         if self.vm_config.n_queues is None:
-            start_vm_cmd = "sudo bash start-vm.sh {} {} {} {} {} {}".format(
+            start_vm_cmd = "sudo bash start-vm.sh {} {} {} {} {} {} '{}'".format(
                     self.machine_config.stack, self.vm_config.id,
                     self.machine_config.interface, self.vm_config.n_cores, 
                     self.vm_config.memory, self.vm_config.cset, 
                     self.cset_configs[self.vm_config.cset].cores_arg)
         else:
-            start_vm_cmd = "sudo bash start-vm.sh {} {} {} {} {} {} {}".format(
+            start_vm_cmd = "sudo bash start-vm.sh {} {} {} {} {} {} '{}' {}".format(
                     self.machine_config.stack, self.vm_config.id,
                     self.machine_config.interface, self.vm_config.n_cores,
                     self.vm_config.memory, 
@@ -42,12 +43,12 @@ class VM:
         self.pane.send_keys(cmd)
 
     def enable_offloads(self, interface):
-        cmd = "sudo ethtool --ofload {} gso on tso on sg on gro on".format(
+        cmd = "sudo ethtool --offload {} gso on tso on sg on gro on".format(
                     interface)
         self.pane.send_keys(cmd)
 
     def disable_offloads(self, interface):
-        cmd = "sudo ethtool --ofload {} gso off tso off sg off gro off".format(
+        cmd = "sudo ethtool --offload {} gso off tso off sg off gro off".format(
                     interface)
         self.pane.send_keys(cmd)
 

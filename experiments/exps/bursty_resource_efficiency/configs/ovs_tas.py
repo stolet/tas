@@ -14,18 +14,21 @@ class Config:
         # Configure Csets
         self.s_cset_configs = []
         self.c_cset_configs = []
+
+        tas_cset = CSetConfig([1,3,5,7,9], "0-1", "tas")
+        self.c_cset_configs.append(tas_cset)
+
         vm0_cset = CSetConfig([1,3,5,7,9], "0-1", "vm0")
         self.s_cset_configs.append(vm0_cset)
-        self.c_cset_configs.append(vm0_cset)
         vm1_cset = CSetConfig([11,13,15,17,19], "0-1", "vm1")
         self.s_cset_configs.append(vm1_cset)
-        self.c_cset_configs.append(vm1_cset)
         vm2_cset = CSetConfig([21,23,25,27,29], "0-1", "vm2")
         self.s_cset_configs.append(vm2_cset)
-        self.c_cset_configs.append(vm2_cset)
         vm3_cset = CSetConfig([31,33,35,37,39], "0-1", "vm3")
         self.s_cset_configs.append(vm3_cset)
-        self.c_cset_configs.append(vm3_cset)
+
+        client_cset = CSetConfig([11,13,15,17,19,21,23,25,27,29,31,33,35,37,39,41], "0-1", "client")
+        self.c_cset_configs.append(client_cset)
 
         # Server Machine
         self.sstack = 'ovs-tas'
@@ -71,11 +74,10 @@ class Config:
                         tas_dir=self.defaults.default_otas_dir_virt)
                 self.server_configs.append(server0_config)
 
-
-
-        self.cstack = 'ovs-tas'
-        self.cnum = 1
-        self.cnodenum = 4
+        # Client machine
+        self.cstack = 'bare-tas'
+        self.cnum = 4
+        self.cnodenum = 1
         self.c_tas_configs = []
         self.c_vm_configs = []
         self.c_proxyg_configs = []
@@ -86,38 +88,33 @@ class Config:
                 stack=self.cstack,
                 is_remote=False,
                 is_server=False)
+        
+        tas_config = TasConfig(pane=self.defaults.c_tas_pane,
+                machine_config=self.c_machine_config,
+                project_dir=self.defaults.default_otas_dir_bare,
+                ip=self.c_machine_config.ip,
+                cc="const-rate", cc_const_rate=0,
+                cset="tas",
+                n_cores=4)
+        self.c_tas_configs.append(tas_config)
 
-        for idx in range(self.cnodenum):
-                vm_config = VMConfig(pane=self.defaults.c_vm_pane,
-                        machine_config=self.c_machine_config,
-                        tas_dir=self.defaults.default_vtas_dir_bare,
-                        tas_dir_virt=self.defaults.default_vtas_dir_virt,
-                        idx=idx,
-                        n_cores=5,
-                        cset="vm{}".format(idx),
-                        memory=5,
-                        n_queues=10)
-                tas_config = TasConfig(pane=self.defaults.c_tas_pane,
-                        machine_config=self.c_machine_config,
-                        project_dir=self.defaults.default_otas_dir_virt,
-                        ip=vm_config.vm_ip,
-                        cc="const-rate", cc_const_rate=0,
-                        n_cores=n_cores, pci="00:03.0")
-                tas_config.args = tas_config.args + " --fp-no-rss --fp-no-xsumoffload"
-
-                self.c_tas_configs.append(tas_config)
-                self.c_vm_configs.append(vm_config)
-
+        for idx in range(self.cnum):
                 port = 1230 + idx
-                client0_config = ClientConfig(exp_name=exp_name, 
+                client_config = ClientConfig(exp_name=exp_name, 
                         pane=self.defaults.c_client_pane,
-                        idx=0, vmid=idx, stack=self.cstack,
+                        idx=idx, vmid=0, stack=self.cstack,
                         ip=self.s_vm_configs[idx].vm_ip, port=port, ncores=3,
                         msize=64, mpending=64, nconns=100,
                         open_delay=open_delays[idx], max_msgs_conn=0, max_pend_conns=1,
-                        bench_dir=self.defaults.default_obenchmark_dir_virt,
-                        tas_dir=self.defaults.default_otas_dir_virt,
+                        bench_dir=self.defaults.default_obenchmark_dir_bare,
+                        tas_dir=self.defaults.default_otas_dir_bare,
+                        cset="client",
                         bursty=True,
-                        rate_normal=4250, rate_burst=50000,
+                        rate_normal=4250, rate_burst=50000, 
                         burst_length=10, burst_interval=50)
-                self.client_configs.append(client0_config)
+                
+                client_config.hist_file = None
+                client_config.hist_msgs_file = None
+                client_config.hist_open_file = None
+                self.client_configs.append(client_config)
+

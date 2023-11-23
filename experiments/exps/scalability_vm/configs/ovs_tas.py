@@ -13,8 +13,8 @@ class Config:
         vm_cores = 2
         
         # Configure Csets
-        pmd_mask = "0x5555"
-        ovs_cores = [0,2,4,6,8,10,12,14]
+        pmd_mask = "0x555"
+        ovs_cores = [2,4,6,8,10,12]
 
         self.s_cset_configs = []
         self.c_cset_configs = []
@@ -47,8 +47,8 @@ class Config:
                         idx=idx,
                         n_cores=vm_cores,
                         cset="vm{}".format(idx),
-                        memory=2,
-                        n_queues=len(ovs_cores))
+                        memory=3,
+                        n_queues=1)
                 tas_config = TasConfig(pane=self.defaults.s_tas_pane,
                         machine_config=self.s_machine_config,
                         project_dir=self.defaults.default_otas_dir_virt,
@@ -92,8 +92,8 @@ class Config:
                         idx=idx,
                         n_cores=vm_cores,
                         cset="vm{}".format(idx),
-                        memory=2,
-                        n_queues=len(ovs_cores))
+                        memory=3,
+                        n_queues=1)
                 tas_config = TasConfig(pane=self.defaults.c_tas_pane,
                         machine_config=self.c_machine_config,
                         project_dir=self.defaults.default_otas_dir_virt,

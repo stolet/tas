@@ -128,8 +128,8 @@ class OvsLinux(Node):
     vm.enable_noiommu("1af4 1110")
     vm.init_interface(vm_config.vm_ip, self.defaults.vm_interface)
     vm.set_mtu(self.defaults.vm_interface, 1452)
-    # vm.tcp_tw_reuse(1)
-    # vm.tcp_fin_timeout(1)
+    vm.tcp_tw_reuse(1)
+    vm.tcp_fin_timeout(1)
   
   def start_vms(self):
     threads = []

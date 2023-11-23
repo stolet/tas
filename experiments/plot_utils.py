@@ -102,6 +102,21 @@ def get_expname_run(fname):
   run_id = re.search(run_id_regex, fname).group(0)
   return run_id
 
+def get_expname_boost(fname):
+  regex = "(?<=-boost)[0-9]\.*[0-9]*(?=_)"
+  boost = re.search(regex, fname).group(0)
+  return boost
+
+def get_expname_boost_(fname):
+  regex = "(?<=-boost)[0-9]\.*[0-9]*(?=-)"
+  boost = re.search(regex, fname).group(0)
+  return boost
+
+def get_expname_budget(fname):
+  regex = "(?<=-budget)[0-9]*"
+  budget = re.search(regex, fname).group(0)
+  return budget
+
 def get_expname_conns(fname):
   regex = "(?<=-conns)[0-9]*"
   nconns = re.search(regex, fname).group(0)

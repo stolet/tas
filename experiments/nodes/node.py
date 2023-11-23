@@ -35,6 +35,10 @@ class Node:
     # for cset in self.cset_configs:
     #   self.destroy_cset(cset.name)
 
+  def remove_file(self, pane, filename):
+     cmd = "rm {}".format(filename)
+     pane.send_keys(cmd)
+
   def add_ip_in_pane(self, pane, interface, ip):
     cmd = "sudo ip addr add {} dev {}".format(ip, interface)
     pane.send_keys(cmd)

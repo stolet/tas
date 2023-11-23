@@ -5,7 +5,7 @@ import os
 class TAS:
     
     def __init__(self, defaults, machine_config, 
-            tas_config, wmanager, cset_configs, vm_config=None):
+            tas_config, cset_configs, wmanager, vm_config=None):
         self.defaults = defaults
         self.machine_config = machine_config
         self.tas_config = tas_config
