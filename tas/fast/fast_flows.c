@@ -747,8 +747,8 @@ int fast_flows_packet_gre(struct dataplane_context *ctx,
 #endif
 
   fs_lock(fs);
-  ctx->counters_total += payload_bytes;
   ctx->vm_counters[fs->vm_id] += payload_bytes;
+  ctx->counters_total += payload_bytes;
 
 #ifdef FLEXNIC_TRACING
   struct flextcp_pl_trev_rxfs te_rxfs = {

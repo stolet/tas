@@ -95,7 +95,7 @@ static inline void tx_send(struct dataplane_context *ctx,
                            struct network_buf_handle *nbh, uint16_t off, uint16_t len);
 
 static void spend_budget(struct dataplane_context *ctx, 
-    uint64_t cycles, int phase_name);
+    uint64_t cycles);
 
 static void arx_cache_flush(struct dataplane_context *ctx, uint64_t tsc) __attribute__((noinline));
 
@@ -243,7 +243,7 @@ void dataplane_loop(struct dataplane_context *ctx)
     s_cycs = util_rdtsc();
     n += poll_rx(ctx, ts, cyc);
     e_cycs = util_rdtsc();
-    spend_budget(ctx, e_cycs - s_cycs, RX_PHASE);
+    spend_budget(ctx, e_cycs - s_cycs);
   
     STATS_TS(rx);
     tx_flush(ctx);
@@ -255,7 +255,7 @@ void dataplane_loop(struct dataplane_context *ctx)
     s_cycs = util_rdtsc();
     n += poll_qman(ctx, ts);
     e_cycs = util_rdtsc();
-    spend_budget(ctx, e_cycs - s_cycs, TX_PHASE);
+    spend_budget(ctx, e_cycs - s_cycs);
    
     STATS_TS(qm);
     STATS_TSADD(ctx, cyc_qm, qm - rx);
@@ -263,7 +263,7 @@ void dataplane_loop(struct dataplane_context *ctx)
     s_cycs = util_rdtsc();
     n += poll_queues(ctx, ts);
     e_cycs = util_rdtsc();
-    spend_budget(ctx, e_cycs - s_cycs, POLL_PHASE);
+    spend_budget(ctx, e_cycs - s_cycs);
    
     STATS_TS(qs);
     STATS_TSADD(ctx, cyc_qs, qs - qm);
@@ -842,12 +842,12 @@ static void arx_cache_flush(struct dataplane_context *ctx, uint64_t tsc)
   ctx->arx_num = 0;
 }
 
-static void spend_budget(struct dataplane_context *ctx, 
-    uint64_t cycles, int phase)
+static void spend_budget(struct dataplane_context *ctx, uint64_t cycles)
 {
   int vmid;
-  double counter;
+  double counter, ratio;
   uint64_t vm_cycles;
+  double counters_sum = 0;
 
   if (ctx->counters_total == 0)
     return;
@@ -855,10 +855,15 @@ static void spend_budget(struct dataplane_context *ctx,
   for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++)
   {
     counter = ctx->vm_counters[vmid];
-    vm_cycles = cycles * (counter / ctx->counters_total);
+    counters_sum += counter;
+    ratio = counter / ctx->counters_total;
+    assert(counter <= ctx->counters_total);
+    assert(ratio >= 0 && ratio <= 1);
+    vm_cycles = cycles * ratio;
     __sync_fetch_and_sub(&ctx->budgets[vmid].budget, vm_cycles);
     ctx->vm_counters[vmid] = 0;
   }
 
+  assert(counters_sum == ctx->counters_total);
   ctx->counters_total = 0;
 }

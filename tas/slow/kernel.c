@@ -46,6 +46,7 @@ static void update_budget(int threads_launched);
 uint64_t get_budget_delta(int vmid, int ctxid);
 void boost_budget(int vmid, int ctxid, int64_t incr);
 struct budget_statistics get_budget_stats(int vmid, int ctxid);
+void print_budget();
 
 struct timeout_manager timeout_mgr;
 static int exited = 0;
@@ -172,6 +173,7 @@ int slowpath_main(int threads_launched)
       {
         printf("stats: drops=%" PRIu64 " k_rexmit=%" PRIu64 " ecn=%" PRIu64 " acks=%" PRIu64"\n",
                kstats.drops, kstats.kernel_rexmit, kstats.ecn_marked, kstats.acks);
+        print_budget();
         fflush(stdout);
       }
       
@@ -234,6 +236,8 @@ static void update_budget(int threads_launched)
       }
   
       weighted_incr = incr * delta_weight;
+      assert(weighted_incr >= 0);
+      assert(delta_weight >= 0 && delta_weight <= 1);
       boost_budget(vmid, ctxid, weighted_incr);
     }
   }
