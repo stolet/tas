@@ -656,7 +656,7 @@ static int config_defaults(struct configuration *c, char *progname)
   c->bu_max_budget = 2100000;
   c->bu_update_freq = 1000;
   c->bu_use_ratio = 0.9;
-  c->bu_boost = 0.94;
+  c->bu_boost = 1;
   c->kni_name = NULL;
   c->ready_fd = -1;
   c->quiet = 0;
