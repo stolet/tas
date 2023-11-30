@@ -688,9 +688,9 @@ unlock:
   new_avail = tcp_txavail(fs, NULL);
   if (new_avail > old_avail) {
     /* update qman queue */
-    if (tas_qman_set(&ctx->qman, fs->vm_id, flow_id, fs->tx_rate, new_avail -
-          old_avail, TCP_MSS, QMAN_SET_RATE | QMAN_SET_MAXCHUNK
-          | QMAN_ADD_AVAIL) != 0)
+    if (tas_qman_set(&ctx->qman, fs->vm_id, flow_id, fs->tx_rate, new_avail, 
+          TCP_MSS, QMAN_SET_RATE | QMAN_SET_MAXCHUNK
+          | QMAN_SET_AVAIL) != 0)
     {
       fprintf(stderr, "fast_flows_packet: qman_set 1 failed, UNEXPECTED\n");
       abort();
@@ -1070,9 +1070,9 @@ unlock:
   new_avail = tcp_txavail(fs, NULL);
   if (new_avail > old_avail) {
     /* update qman queue */
-    if (tas_qman_set(&ctx->qman, fs->vm_id, flow_id, fs->tx_rate, new_avail -
-          old_avail, TCP_MSS, QMAN_SET_RATE | QMAN_SET_MAXCHUNK
-          | QMAN_ADD_AVAIL) != 0)
+    if (tas_qman_set(&ctx->qman, fs->vm_id, flow_id, fs->tx_rate, new_avail, 
+          TCP_MSS, QMAN_SET_RATE | QMAN_SET_MAXCHUNK
+          | QMAN_SET_AVAIL) != 0)
     {
       fprintf(stderr, "fast_flows_packet_gre: qman_set 1 failed, UNEXPECTED\n");
       abort();
@@ -1194,9 +1194,8 @@ int fast_flows_bump(struct dataplane_context *ctx, uint32_t flow_id,
 
   /* update queue manager queue */
   if (old_avail < new_avail) {
-    if (tas_qman_set(&ctx->qman, fs->vm_id, flow_id, fs->tx_rate, new_avail -
-          old_avail, TCP_MSS, QMAN_SET_RATE | QMAN_SET_MAXCHUNK
-          | QMAN_ADD_AVAIL) != 0)
+    if (tas_qman_set(&ctx->qman, fs->vm_id, flow_id, fs->tx_rate, new_avail, 
+        TCP_MSS, QMAN_SET_RATE | QMAN_SET_MAXCHUNK | QMAN_SET_AVAIL) != 0)
     {
       fprintf(stderr, "flast_flows_bump: qman_set 1 failed, UNEXPECTED\n");
       abort();
@@ -1276,8 +1275,8 @@ void fast_flows_retransmit(struct dataplane_context *ctx, uint32_t flow_id)
 
   /* update queue manager */
   if (new_avail > old_avail) {
-    if (tas_qman_set(&ctx->qman, fs->vm_id, flow_id, fs->tx_rate, new_avail - old_avail,
-          TCP_MSS, QMAN_SET_RATE | QMAN_SET_MAXCHUNK | QMAN_ADD_AVAIL) != 0)
+    if (tas_qman_set(&ctx->qman, fs->vm_id, flow_id, fs->tx_rate, new_avail,
+          TCP_MSS, QMAN_SET_RATE | QMAN_SET_MAXCHUNK | QMAN_SET_AVAIL) != 0)
     {
       fprintf(stderr, "flast_flows_bump: qman_set 1 failed, UNEXPECTED\n");
       abort();
