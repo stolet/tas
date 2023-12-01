@@ -219,7 +219,8 @@ static inline uint32_t tcp_txavail(const struct flextcp_pl_flowst *fs,
   buf_avail = (pavail != NULL ? *pavail : fs->tx_avail);
 
   /* flow control window */
-  fc_avail = fs->rx_remote_avail - fs->tx_sent;
+  fc_avail = (fs->tx_sent > fs->rx_remote_avail) ? 
+      0 : fs->rx_remote_avail - fs->tx_sent;
 
   return TAS_MIN(buf_avail, fc_avail);
 }

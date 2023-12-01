@@ -135,17 +135,20 @@ static unsigned cc_poll_vm(int vmid, unsigned n,
   struct connection *c, *c_first;
   struct nicif_connection_stats stats;
   uint32_t last;
+  unsigned m = 0;
 
   c = c_first = (next_conn[vmid] != NULL ? next_conn[vmid] : cc_conns[vmid]);
   if (c == NULL) {
     return n;
   }
 
-  for (; n < 128 && (n == 0 || c != c_first);
-      c = (c->cc_next != NULL ? c->cc_next : cc_conns[vmid]), n++)
+  for (; n < 128 && (m == 0 || c != c_first);
+      c = (c->cc_next != NULL ? c->cc_next : cc_conns[vmid]), n++, m++)
   {
     if (c->status != CONN_OPEN)
+    {
       continue;
+    }
 
     if (cur_ts - c->cc_last_ts < c->cc_rtt * config.cc_control_interval)
       continue;

@@ -1242,6 +1242,7 @@ void fast_flows_retransmit(struct dataplane_context *ctx, uint32_t flow_id)
         .tx_next_pos = fs->tx_next_pos,
         .tx_next_seq = fs->tx_next_seq,
         .rx_remote_avail = fs->rx_remote_avail,
+        .vm_id = fs->vm_id,
       };
     trace_event(FLEXNIC_PL_TREV_REXMIT, sizeof(te_rexmit), &te_rexmit);
 #endif
@@ -1679,7 +1680,6 @@ static void flow_tx_ack_gre(struct dataplane_context *ctx, uint32_t seq,
 static void flow_reset_retransmit(struct flextcp_pl_flowst *fs)
 {
   uint32_t x;
-
   /* reset flow state as if we never transmitted those segments */
   fs->rx_dupack_cnt = 0;
 
@@ -1691,7 +1691,6 @@ static void flow_reset_retransmit(struct flextcp_pl_flowst *fs)
     fs->tx_next_pos = fs->tx_len - x;
   }
   fs->tx_avail += fs->tx_sent;
-  fs->rx_remote_avail += fs->tx_sent;
   fs->tx_sent = 0;
 
   /* cut rate by half if first drop in control interval */
