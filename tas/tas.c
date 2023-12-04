@@ -317,8 +317,6 @@ void boost_budget(int vmid, int ctxid, int64_t incr)
   if (new_budget > max_budget)
   {
     incr = max_budget - old_budget;
-  } else if (new_budget < (max_budget * -1)) {
-    incr = (max_budget * -1) - new_budget;
   }
   __sync_fetch_and_add(&ctxs[ctxid]->budgets[vmid].budget, incr);
 }
