@@ -2,78 +2,31 @@
 set terminal pdf font "Latin Modern Roman,16"
 set output "plot.pdf"
 
-# set multiplot layout 1, 2
+set multiplot layout 2, 1
 
-set xlabel "Agressor Connections"
-set ylabel "Victim 99p Latency [µs]"
-set key left top
-set logscale y 10
+set palette defined (1 "#fef0d9", 2 "#fdcc8a", 3 "#fc8d59", 4 "#d7301f")
 
-plot 'lat_99p.dat' using 1:2:6:xtic(1) with yerrorlines title 'tas' linetype 1 ps 1, \
-     'lat_99p.dat' using 1:5:9:xtic(1) with yerrorlines title 'ovs-linux' linetype 4 ps 1, \
-     'lat_99p.dat' using 1:4:8:xtic(1) with yerrorlines title 'ovs-tas' linetype 3 ps 1, \
-     'lat_99p.dat' using 1:3:7:xtic(1) with yerrorlines title 'virtuoso' linetype 2 ps 1, \
+set tmargin 0
+set bmargin 0
+set rmargin 0
 
+set ylabel "Budget"
+# set ytics ("0.25" 0, "0.375" 1, "0.5" 2, "0.625" 3, "0.75" 4 , "0.875" 5, "1" 6, "1.125" 7, "1.25" 8)
+set ytics ("0.25" 0, "0.75" 4, "1.25" 8)
+set autoscale yfix
 
-# set xlabel "Agressor Message Size [Bytes]"
-# set ylabel "Victim 99p Latency [µs]"
-# set key left top
-# set logscale y 10
-# set logscale x 2
+set autoscale xfix
 
-# plot '../perf_iso_latmsize/lat_99p.dat' using 1:2:6 with yerrorlines title 'tas' linetype 1 ps 1, \
-#      '../perf_iso_latmsize/lat_99p.dat' using 1:5:9 with yerrorlines title 'ovs-linux' linetype 4 ps 1, \
-#      '../perf_iso_latmsize/lat_99p.dat' using 1:4:8 with yerrorlines title 'ovs-tas' linetype 3 ps 1, \
-#      '../perf_iso_latmsize/lat_99p.dat' using 1:3:7 with yerrorlines title 'virtuoso' linetype 2 ps 1, \
-# # margins: left,right,bottom,top
-# # spacing: xspacing,yspacing
-# set multiplot layout 2,2 \
-#               margins 0.1,0.95,0.15,0.90 \
-#               spacing 0.1,0.07
-              
-# set label 1 "Aggresor Client # Connections" at screen 0.5, 0.03 center font "Latin Modern Roman,8"
-# set label 2 "Victim Client Latency (µs)" at screen 0.01, 0.5 rotate by 90 center font "Latin Modern Roman,8"
+set cblabel "Victim 99p Latency [µs]" rotate by 270 offset 1
+set cbrange[50:180]
+set cbtics ("50" 50, "115" 115, "180" 180)
 
-# set title offset 0,-0.6
+unset xtics
+plot 'lat_99p.dat' matrix with image pixels notitle
 
-# # Plot 50p latency
-# unset xtics
-# set yrange [0:]
-# set title "50p Latency"
-# set key right bottom
-# plot 'lat_50p.dat' using 1:2:4 with yerrorlines title 'bare-virtuoso' linetype 4 ps 0.3, \
-#      'lat_50p.dat' using 1:3:5 with yerrorlines title 'virtuoso' linetype 5 ps 0.3, \
-#      # 'lat_50p.dat' using 1:5:9 with yerrorlines title 'ovs-linux' linetype 5 ps 0.3, \
-#      # 'lat_50p.dat' using 1:6: with yerrorlines title 'ovs-tas' linetype 6 ps 0.3 w lp, \
-
-# # Plot 90p latency
-# unset xtics
-# set yrange [0:]
-# set title "90p Latency"
-# set key right bottom
-# plot 'lat_90p.dat' using 1:2:4 with yerrorlines title 'bare-virtuoso' linetype 4 ps 0.3, \
-#      'lat_90p.dat' using 1:3:5 with yerrorlines title 'virtuoso' linetype 5 ps 0.3, \
-#      # 'lat_90p.dat' using 1:5:9 with yerrorlines title 'ovs-linux' linetype 5 ps 0.3, \
-#      # 'lat_90p.dat' using 1:6: with yerrorlines title 'ovs-tas' linetype 6 ps 0.3 w lp, \
-
-# # Plot 99p latency
-# set xtics
-# set xtics font "Latin Modern Roman,4"
-# set yrange [0:]
-# set title "99p Latency"
-# set key right bottom
-# plot 'lat_99p.dat' using 1:2:4 with yerrorlines title 'bare-virtuoso' linetype 4 ps 0.3, \
-#      'lat_99p.dat' using 1:3:5 with yerrorlines title 'virtuoso' linetype 5 ps 0.3, \
-#      # 'lat_99p.dat' using 1:5:9 with yerrorlines title 'ovs-linux' linetype 5 ps 0.3, \
-#      # 'lat_99p.dat' using 1:6: with yerrorlines title 'ovs-tas' linetype 6 ps 0.3 w lp, \
-
-# # Plot 99.9p latency
-# set xtics
-# set xtics font "Latin Modern Roman,4"
-# set yrange [0:]
-# set title "99.9p Latency"
-# set key right bottom
-# plot 'lat_99.9p.dat' using 1:2:4 with yerrorlines title 'bare-virtuoso' linetype 4 ps 0.3, \
-#      'lat_99.9p.dat' using 1:3:5 with yerrorlines title 'virtuoso' linetype 5 ps 0.3, \
-#      # 'lat_99.9p.dat' using 1:5:9 with yerrorlines title 'ovs-linux' linetype 5 ps 0.3, \
-#      # 'lat_99.9p.dat' using 1:6: with yerrorlines title 'ovs-tas' linetype 6 ps 0.3 w lp, \
+set xlabel "Boost"
+set xtics ("0.25" 0, "0.5" 1, "0.75" 2, "1" 3, "1.25" 4, "1.5" 5, "1.75" 6, "2" 7)
+set cblabel "Aggressor Throughput [mRPS]" rotate by 270 offset 1
+set cbrange[800000:1200000]
+set cbtics ("0.8" 800000, "1" 1000000, "1.2" 1200000)
+plot 'tp.dat' matrix with image pixels notitle

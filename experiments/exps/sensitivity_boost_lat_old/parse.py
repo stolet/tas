@@ -3,29 +3,28 @@ sys.path.append("../../../")
 
 import os
 import numpy as np
-import pandas as pd
 import experiments.plot_utils as putils
 
 
-def check_freq(data, freq):
-  if freq not in data:
-    data[freq] = {}
+def check_boost(data, boost):
+  if boost not in data:
+    data[boost] = {}
 
-def check_stack(data, freq, stack):
-  if stack not in data[freq]:
-    data[freq][stack] = {}
+def check_stack(data, boost, stack):
+  if stack not in data[boost]:
+    data[boost][stack] = {}
 
-def check_run(data, freq, stack, run):
-  if run not in data[freq][stack]:
-    data[freq][stack][run] = {}
+def check_run(data, boost, stack, run):
+  if run not in data[boost][stack]:
+    data[boost][stack][run] = {}
 
-def check_nid(data, freq, stack, run, nid):
-  if nid not in data[freq][stack][run]:
-    data[freq][stack][run][nid] = {}
+def check_nid(data, boost, stack, run, nid):
+  if nid not in data[boost][stack][run]:
+    data[boost][stack][run][nid] = {}
 
-def check_cid(data, freq, stack, run, nid, cid):
-  if cid not in data[freq][stack][run][nid]:
-    data[freq][stack][run][nid][cid] = ""
+def check_cid(data, boost, stack, run, nid, cid):
+  if cid not in data[boost][stack][run][nid]:
+    data[boost][stack][run][nid][cid] = ""
 
 def get_avg_tp(fname_c1, fname_c0):
   n_messages = 0
@@ -57,32 +56,32 @@ def parse_metadata():
       continue
 
     run = putils.get_expname_run(fname)
-    freq = str(float(putils.get_expname_freq(fname)))
+    boost = str(float(putils.get_expname_boost(fname)))
     cid = putils.get_client_id(fname)
     nid = putils.get_node_id(fname)
     stack = putils.get_stack(fname)
 
-    check_freq(data, freq)
-    check_stack(data, freq, stack)
-    check_run(data, freq, stack, run)
-    check_nid(data, freq, stack, run, nid)
-    check_cid(data, freq, stack, run, nid, cid)
+    check_boost(data, boost)
+    check_stack(data, boost, stack)
+    check_run(data, boost, stack, run)
+    check_nid(data, boost, stack, run, nid)
+    check_cid(data, boost, stack, run, nid, cid)
 
-    data[freq][stack][run][nid][cid] = fname
+    data[boost][stack][run][nid][cid] = fname
 
   return data
 
 def parse_data(parsed_md):
   data = {}
   out_dir = "./out/"
-  for freq in parsed_md:
+  for boost in parsed_md:
     data_point = {}
-    for stack in parsed_md[freq]:
+    for stack in parsed_md[boost]:
       tp_x = np.array([])
       latencies = putils.init_latencies()
-      for run in parsed_md[freq][stack]:
-        fname_c0 = out_dir + parsed_md[freq][stack][run]['0']['0']
-        fname_c1 = out_dir + parsed_md[freq][stack][run]['1']['0']
+      for run in parsed_md[boost][stack]:
+        fname_c0 = out_dir + parsed_md[boost][stack][run]['0']['0']
+        fname_c1 = out_dir + parsed_md[boost][stack][run]['1']['0']
         putils.append_latencies(latencies, fname_c0)
         tp = get_avg_tp(fname_c1, fname_c0)
         if tp > 0:
@@ -94,38 +93,38 @@ def parse_data(parsed_md):
         "lat": putils.get_latency_avg(latencies),
         "lat-std": putils.get_latency_std(latencies)
       }
-    data[freq] = data_point
+    data[boost] = data_point
   
   return data
-  
-def save_dat_file(data):
-  header = "freq virt-tas-avg virt-tas-std\n"
 
-  freqs = list(data.keys())
-  freqs = list(map(str, sorted(map(float, freqs))))
-  stacks =  list(data[freqs[0]].keys())
-  percentiles =  list(data[freqs[0]][stacks[0]]['lat'].keys())
+def save_dat_file(data):
+  header = "boost virt-tas-avg virt-tas-std\n"
+
+  boosts = list(data.keys())
+  boosts = list(map(str, sorted(map(float, boosts))))
+  stacks =  list(data[boosts[0]].keys())
+  percentiles =  list(data[boosts[0]][stacks[0]]['lat'].keys())
 
   for percentile in percentiles:
       fname_lat = "./lat_{}.dat".format(percentile)
       f_lat = open(fname_lat, "w+")
       f_lat.write(header)
 
-      for freq in freqs:
+      for boost in boosts:
         f_lat.write("{} {} {}\n".format(
-          float(freq),
-          data[freq]['virt-tas']["lat"][percentile],
-          data[freq]['virt-tas']["lat-std"][percentile]))
+          float(boost),
+          data[boost]['virt-tas']["lat"][percentile],
+          data[boost]['virt-tas']["lat-std"][percentile]))
   
   fname_tp = "./tp.dat"
   f_tp = open(fname_tp, "w+")
   f_tp.write(header)
 
-  for freq in freqs:
+  for boost in boosts:
     f_tp.write("{} {} {}\n".format(
-      float(freq),
-      data[freq]['virt-tas']["tp"],
-      data[freq]['virt-tas']["tp-std"]))
+      float(boost),
+      data[boost]['virt-tas']["tp"],
+      data[boost]['virt-tas']["tp-std"]))
 
 def main():
   parsed_md = parse_metadata()

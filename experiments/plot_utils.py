@@ -102,6 +102,11 @@ def get_expname_run(fname):
   run_id = re.search(run_id_regex, fname).group(0)
   return run_id
 
+def get_expname_freq(fname):
+  regex = "(?<=-frq)[0-9]*"
+  freq = re.search(regex, fname).group(0)
+  return freq
+
 def get_expname_boost(fname):
   regex = "(?<=-boost)[0-9]\.*[0-9]*(?=_)"
   boost = re.search(regex, fname).group(0)

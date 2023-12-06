@@ -31,15 +31,15 @@ def check_cid(data, boost, budget, stack, run, nid, cid):
   if cid not in data[boost][budget][stack][run][nid]:
     data[boost][budget][stack][run][nid][cid] = ""
 
-def get_avg_tp(fname_c1, fname_c0):
+def get_avg_tp(fname_c0, fname_c1):
   n_messages = 0
   n = 0
 
-  f = open(fname_c1)
+  f = open(fname_c0)
   lines = f.readlines()
 
-  c1_first_ts = putils.get_first_ts(fname_c0)
-  idx, _ = putils.get_min_idx(fname_c1, c1_first_ts)
+  c1_first_ts = putils.get_first_ts(fname_c1)
+  idx, _ = putils.get_min_idx(fname_c0, c1_first_ts)
 
   first_line = lines[idx]
   last_line = lines[len(lines) - 1]
@@ -87,20 +87,16 @@ def parse_data(parsed_md):
       data_point = {}
       for stack in parsed_md[boost][budget]:
         tp_x = np.array([])
-        latencies = putils.init_latencies()
         for run in parsed_md[boost][budget][stack]:
           fname_c0 = out_dir + parsed_md[boost][budget][stack][run]['0']['0']
           fname_c1 = out_dir + parsed_md[boost][budget][stack][run]['1']['0']
-          putils.append_latencies(latencies, fname_c0)
-          tp = get_avg_tp(fname_c1, fname_c0)
+          tp = get_avg_tp(fname_c0, fname_c1)
           if tp > 0:
             tp_x = np.append(tp_x, tp)
 
         data_point[stack] = {
           "tp": tp_x.mean(),
           "tp-std": tp_x.std(),
-          "lat": putils.get_latency_avg(latencies),
-          "lat-std": putils.get_latency_std(latencies)
         }
       data[boost][budget] = data_point
   
@@ -111,21 +107,7 @@ def save_dat_file(data):
   boosts = list(map(str, sorted(map(float, boosts))))
   budgets = list(data[boosts[0]].keys())
   budgets = list(map(str, sorted(map(int, budgets))))
-  stacks =  list(data[boosts[0]][budgets[0]].keys())
-  percentiles =  list(data[boosts[0]][budgets[0]][stacks[0]]['lat'].keys())
-
   matrix = np.zeros((len(budgets), len(boosts)))
-
-  for percentile in percentiles:
-      fname_lat = "./lat_{}.dat".format(percentile)
-
-      for i, boost in enumerate(boosts):
-        for j, budget in enumerate(budgets):
-          matrix[j][i] = data[boost][budget]['virt-tas']['lat'][percentile]
-      
-      df = pd.DataFrame(matrix, index=budgets, columns=boosts)
-      df.to_csv(fname_lat, sep=" ")
-  
   fname_tp = "./tp.dat"
 
   for i, boost in enumerate(boosts):

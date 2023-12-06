@@ -27,15 +27,15 @@ def check_cid(data, freq, stack, run, nid, cid):
   if cid not in data[freq][stack][run][nid]:
     data[freq][stack][run][nid][cid] = ""
 
-def get_avg_tp(fname_c1, fname_c0):
+def get_avg_tp_victim(fname_c0, fname_c1):
   n_messages = 0
   n = 0
 
-  f = open(fname_c1)
+  f = open(fname_c0)
   lines = f.readlines()
 
-  c1_first_ts = putils.get_first_ts(fname_c0)
-  idx, _ = putils.get_min_idx(fname_c1, c1_first_ts)
+  c1_first_ts = putils.get_first_ts(fname_c1)
+  idx, _ = putils.get_min_idx(fname_c0, c1_first_ts)
 
   first_line = lines[idx]
   last_line = lines[len(lines) - 1]
@@ -44,7 +44,28 @@ def get_avg_tp(fname_c1, fname_c0):
       int(putils.get_n_messages(first_line))
   n = len(lines) - idx
 
-  return n_messages / n
+  return (n_messages / n) * 64 * 8
+
+# NOTE: Aggressor has different message size (1024 vs 64 bytes)
+def get_avg_tp_aggr(fname_c0, fname_c1):
+  n_messages = 0
+  n = 0
+
+  f = open(fname_c1)
+  lines = f.readlines()
+
+  c1_first_ts = putils.get_first_ts(fname_c1)
+  c0_idx, c0_ts = putils.get_min_idx(fname_c0, c1_first_ts)
+  c1_idx, c1_ts = putils.get_min_idx(fname_c1, c0_ts)
+
+  first_line = lines[c1_idx]
+  last_line = lines[len(lines) - 1]
+
+  n_messages = int(putils.get_n_messages(last_line)) - \
+      int(putils.get_n_messages(first_line))
+  n = len(lines) - c1_idx
+
+  return (n_messages / n) * 1024 * 8
 
 def parse_metadata():
   dir_path = "./out/"
@@ -78,55 +99,44 @@ def parse_data(parsed_md):
   for freq in parsed_md:
     data_point = {}
     for stack in parsed_md[freq]:
-      tp_x = np.array([])
-      latencies = putils.init_latencies()
+      tp_x_victim = np.array([])
+      tp_x_aggr = np.array([])
       for run in parsed_md[freq][stack]:
         fname_c0 = out_dir + parsed_md[freq][stack][run]['0']['0']
         fname_c1 = out_dir + parsed_md[freq][stack][run]['1']['0']
-        putils.append_latencies(latencies, fname_c0)
-        tp = get_avg_tp(fname_c1, fname_c0)
-        if tp > 0:
-          tp_x = np.append(tp_x, tp)
-
+        tp_victim = get_avg_tp_victim(fname_c0, fname_c1)
+        tp_aggr = get_avg_tp_aggr(fname_c0, fname_c1)
+        # if tp_victim > 0 and tp_aggr > 0:
+        tp_x_victim = np.append(tp_x_victim, tp_victim)
+        tp_x_aggr = np.append(tp_x_aggr, tp_aggr)
       data_point[stack] = {
-        "tp": tp_x.mean(),
-        "tp-std": tp_x.std(),
-        "lat": putils.get_latency_avg(latencies),
-        "lat-std": putils.get_latency_std(latencies)
+        "tp-victim": tp_x_victim.mean(),
+        "tp-victim-std": tp_x_victim.std(),
+        "tp-aggr": tp_x_aggr.mean(),
+        "tp-aggr-std": tp_x_aggr.std(),
       }
     data[freq] = data_point
   
   return data
-  
-def save_dat_file(data):
-  header = "freq virt-tas-avg virt-tas-std\n"
 
+def save_dat_file(data):
+  header = "freq virt-tas-victim-avg virt-tas-victim-std virt-tas-aggr-avg virt-tas-aggr-std\n"
   freqs = list(data.keys())
   freqs = list(map(str, sorted(map(float, freqs))))
-  stacks =  list(data[freqs[0]].keys())
-  percentiles =  list(data[freqs[0]][stacks[0]]['lat'].keys())
 
-  for percentile in percentiles:
-      fname_lat = "./lat_{}.dat".format(percentile)
-      f_lat = open(fname_lat, "w+")
-      f_lat.write(header)
-
-      for freq in freqs:
-        f_lat.write("{} {} {}\n".format(
-          float(freq),
-          data[freq]['virt-tas']["lat"][percentile],
-          data[freq]['virt-tas']["lat-std"][percentile]))
-  
-  fname_tp = "./tp.dat"
-  f_tp = open(fname_tp, "w+")
-  f_tp.write(header)
+  fname = "./tp.dat"
+  f_lat = open(fname, "w+")
+  f_lat.write(header)
 
   for freq in freqs:
-    f_tp.write("{} {} {}\n".format(
+    f_lat.write("{} {} {} {} {}\n".format(
       float(freq),
-      data[freq]['virt-tas']["tp"],
-      data[freq]['virt-tas']["tp-std"]))
-
+      data[freq]['virt-tas']["tp-victim"],
+      data[freq]['virt-tas']["tp-victim-std"],
+      data[freq]['virt-tas']["tp-aggr"],
+      data[freq]['virt-tas']["tp-aggr-std"],
+      ))
+    
 def main():
   parsed_md = parse_metadata()
   latencies = parse_data(parsed_md)

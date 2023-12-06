@@ -9,7 +9,7 @@ from configs.gen_config import ServerConfig
 from configs.gen_config import CSetConfig
 
 class Config:
-    def __init__(self, exp_name, boost, budget):
+    def __init__(self, exp_name, boost):
         ncores = 9
         nconns = 100
         msize = 1024
@@ -56,7 +56,7 @@ class Config:
                 ip=self.s_machine_config.ip,
                 cc="const-rate", cc_const_rate="0",
                 n_cores=5, cset="tas_server")
-        tas_config.args = tas_config.args + " --vm-shm-len=4294967296 --bu-boost={} --bu-max-budget={}".format(boost, budget)
+        tas_config.args = tas_config.args + " --vm-shm-len=4294967296 --bu-boost={}".format(boost)
         self.s_tas_configs.append(tas_config)
 
         self.s_proxyh_config = HostProxyConfig(pane=self.defaults.s_proxyh_pane,
@@ -130,7 +130,7 @@ class Config:
                 ip=self.c_machine_config.ip,
                 cc="const-rate", cc_const_rate="0",
                 n_cores=1, cset="tas_client")
-        tas_config.args = tas_config.args + " --vm-shm-len=4294967296 --bu-boost={} --bu-max-budget={}".format(boost, budget)
+        tas_config.args = tas_config.args + " --vm-shm-len=4294967296 --bu-boost={}".format(boost)
         self.c_tas_configs.append(tas_config)
 
         self.c_proxyh_config = HostProxyConfig(pane=self.defaults.c_proxyh_pane,
