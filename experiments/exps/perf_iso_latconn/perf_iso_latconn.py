@@ -10,7 +10,7 @@ experiments = []
 
 nconns = 500
 n_cores = [5,4,3,2,1]
-n_runs = 1
+n_runs = 3
 
 for n_r in range(n_runs):
   for n_c in n_cores:
@@ -21,7 +21,7 @@ for n_r in range(n_runs):
     ovs_linux_exp = exp.Experiment(OVSLinuxConf(exp_name + "ovs-linux", n_c, nconns), name=exp_name)
     ovs_tas_exp = exp.Experiment(OVSTasConf(exp_name + "ovs-tas", n_c, nconns), name=exp_name)
 
-    # experiments.append(tas_bare_exp)
+    experiments.append(tas_bare_exp)
     experiments.append(tas_virt_exp)
-    # experiments.append(ovs_tas_exp)
-    # experiments.append(ovs_linux_exp)
+    experiments.append(ovs_tas_exp)
+    experiments.append(ovs_linux_exp)

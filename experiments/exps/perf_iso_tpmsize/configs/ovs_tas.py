@@ -14,14 +14,14 @@ class Config:
         # Configure Csets
         self.s_cset_configs = []
         self.c_cset_configs = []
-        vm0_cset = CSetConfig([1,3,5,7,9,11,13,15,17,19,21], "0-1", "vm0_server")
+        vm0_cset = CSetConfig([1,3,5,7], "0-1", "vm0_server")
         self.s_cset_configs.append(vm0_cset)
-        vm1_cset = CSetConfig([23,25,27,29,31,33,35,37,39,41,43], "0-1", "vm1_server")
+        vm1_cset = CSetConfig([9,11,13,15,17,19,21,23], "0-1", "vm1_server")
         self.s_cset_configs.append(vm1_cset)
 
-        vm0_cset = CSetConfig([1,3,5,7], "0-1", "vm0_client")
+        vm0_cset = CSetConfig([1,3,5,7,9,11,13,15,17,19,21], "0-1", "vm0_client")
         self.c_cset_configs.append(vm0_cset)
-        vm1_cset = CSetConfig([9,11,13,15,17,19,21,23], "0-1", "vm1_client")
+        vm1_cset = CSetConfig([23,25,27,29,31,33,35,37,39,41,43], "0-1", "vm1_client")
         self.c_cset_configs.append(vm1_cset)
 
         # Server Machine
@@ -52,7 +52,7 @@ class Config:
                 machine_config=self.s_machine_config,
                 project_dir=self.defaults.default_otas_dir_virt,
                 ip=vm0_config.vm_ip,
-                n_cores=5, pci="00:03.0")
+                n_cores=1, pci="00:03.0")
         tas0_config.args = tas0_config.args + " --fp-no-xsumoffload --fp-no-rss"
         
 
@@ -69,7 +69,7 @@ class Config:
                 machine_config=self.s_machine_config,
                 project_dir=self.defaults.default_otas_dir_virt,
                 ip=vm1_config.vm_ip,
-                n_cores=5, pci="00:03.0")
+                n_cores=1, pci="00:03.0")
         tas1_config.args = tas1_config.args + " --fp-no-xsumoffload --fp-no-rss"
 
 
@@ -80,12 +80,12 @@ class Config:
 
         server0_config = ServerConfig(pane=self.defaults.s_server_pane,
                 idx=0, vmid=0,
-                port=1234, ncores=4, max_flows=8192, max_bytes=4096,
+                port=1234, ncores=1, max_flows=8192, max_bytes=4096,
                 bench_dir=self.defaults.default_obenchmark_dir_virt,
                 tas_dir=self.defaults.default_otas_dir_virt)
         server1_config = ServerConfig(pane=self.defaults.s_server_pane,
                 idx=1, vmid=1,
-                port=1235, ncores=4, max_flows=8192, max_bytes=4096,
+                port=1235, ncores=5, max_flows=8192, max_bytes=4096,
                 bench_dir=self.defaults.default_obenchmark_dir_virt,
                 tas_dir=self.defaults.default_otas_dir_virt)
         self.server_configs.append(server0_config)
@@ -121,7 +121,7 @@ class Config:
                 machine_config=self.c_machine_config,
                 project_dir=self.defaults.default_otas_dir_virt,
                 ip=vm0_config.vm_ip,
-                n_cores=1, pci="00:03.0")
+                n_cores=5, pci="00:03.0")
         tas0_config.args = tas0_config.args  + " --fp-no-xsumoffload --fp-no-rss"
         
 
@@ -138,7 +138,7 @@ class Config:
                 machine_config=self.c_machine_config,
                 project_dir=self.defaults.default_otas_dir_virt,
                 ip=vm1_config.vm_ip,
-                n_cores=1, pci="00:03.0")
+                n_cores=5, pci="00:03.0")
         tas1_config.args = tas1_config.args + " --fp-no-xsumoffload --fp-no-rss"
 
 

@@ -34,7 +34,7 @@ class Defaults:
         self.c_setup_pane = "{}_setup".format(self.client_pane_prefix)
         self.c_cleanup_pane = "{}_cleanup".format(self.client_pane_prefix)
 
-        # Mellanox interfaces on client and server machineremoved
+        # Mellanox interfaces on client and server machine
         self.client_interface = 'enp216s0f0np0'
         self.client_interface_pci = "0000:d8:00.0"
         self.client_mac = "b8:59:9f:c4:af:e6"

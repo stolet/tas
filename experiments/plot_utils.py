@@ -107,18 +107,18 @@ def get_expname_freq(fname):
   freq = re.search(regex, fname).group(0)
   return freq
 
-def get_expname_boost(fname):
+def get_expname_boost_(fname):
   regex = "(?<=-boost)[0-9]\.*[0-9]*(?=_)"
   boost = re.search(regex, fname).group(0)
   return boost
 
-def get_expname_boost_(fname):
-  regex = "(?<=-boost)[0-9]\.*[0-9]*(?=-)"
+def get_expname_boost(fname):
+  regex = "(?<=-boost)[0-9]\.*[0-9]*"
   boost = re.search(regex, fname).group(0)
   return boost
 
 def get_expname_budget(fname):
-  regex = "(?<=-budget)[0-9]*"
+  regex = "(?<=-budget)[0-9]*(?=_)"
   budget = re.search(regex, fname).group(0)
   return budget
 
