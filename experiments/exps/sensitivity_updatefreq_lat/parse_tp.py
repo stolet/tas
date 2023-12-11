@@ -44,7 +44,7 @@ def get_avg_tp_victim(fname_c0, fname_c1):
       int(putils.get_n_messages(first_line))
   n = len(lines) - idx
 
-  return (n_messages / n) * 1024 * 8
+  return n_messages / n
 
 # NOTE: Aggressor has different message size (1024 vs 64 bytes)
 def get_avg_tp_aggr(fname_c0, fname_c1):
@@ -65,7 +65,7 @@ def get_avg_tp_aggr(fname_c0, fname_c1):
       int(putils.get_n_messages(first_line))
   n = len(lines) - c1_idx
 
-  return (n_messages / n) * 1024 * 8
+  return n_messages / n
 
 def parse_metadata():
   dir_path = "./out/"

@@ -31,7 +31,7 @@ class Config:
         vm1_cset = CSetConfig([23,25,27,29,31,33,35,37,39,41,43], "0-1", "vm1_server", exclusive=True)
         self.s_cset_configs.append(vm1_cset)
 
-        vm0_cset = CSetConfig([13,15,17,19,21,23], "0-1", "vm0_client", exclusive=True)
+        vm0_cset = CSetConfig([13,15,17], "0-1", "vm0_client", exclusive=True)
         self.c_cset_configs.append(vm0_cset)
         vm1_cset = CSetConfig([23,25,27,29,31,33,35,37,39,41,43], "0-1", "vm1_client", exclusive=True)
         self.c_cset_configs.append(vm1_cset)
@@ -56,8 +56,7 @@ class Config:
                 machine_config=self.s_machine_config,
                 project_dir=self.defaults.default_vtas_dir_bare,
                 ip=self.s_machine_config.ip,
-                cc="const-rate", cc_const_rate="0",
-                n_cores=2, cset="tas_server")
+                n_cores=1, cset="tas_server")
         tas_config.args = tas_config.args + " --vm-shm-len=4294967296 --bu-max-budget={} --bu-update-freq={}".format(max_budget, freq)
         self.s_tas_configs.append(tas_config)
 
@@ -130,7 +129,6 @@ class Config:
                 machine_config=self.c_machine_config,
                 project_dir=self.defaults.default_vtas_dir_bare,
                 ip=self.c_machine_config.ip,
-                cc="const-rate", cc_const_rate="0",
                 n_cores=5, cset="tas_client")
         tas_config.args = tas_config.args + " --vm-shm-len=4294967296 --bu-max-budget={} --bu-update-freq={}".format(max_budget, freq)
         self.c_tas_configs.append(tas_config)
@@ -145,7 +143,7 @@ class Config:
                 tas_dir=self.defaults.default_vtas_dir_bare,
                 tas_dir_virt=self.defaults.default_vtas_dir_virt,
                 idx=0,
-                n_cores=6,
+                n_cores=3,
                 cset="vm0_client",
                 memory=10)
         vm1_config = VMConfig(pane=self.defaults.c_vm_pane,
@@ -153,7 +151,7 @@ class Config:
                 tas_dir=self.defaults.default_vtas_dir_bare,
                 tas_dir_virt=self.defaults.default_vtas_dir_virt,
                 idx=1,
-                n_cores=10,
+                n_cores=11,
                 cset="vm1_client",
                 memory=10)
 
@@ -174,7 +172,7 @@ class Config:
                 pane=self.defaults.c_client_pane,
                 idx=0, vmid=0, stack=self.cstack,
                 ip=self.s_vm_configs[0].vm_ip, port=1234, ncores=1,
-                msize=64, mpending=64, nconns=1,
+                msize=msize, mpending=64, nconns=1,
                 open_delay=30, max_msgs_conn=0, max_pend_conns=1,
                 bench_dir=self.defaults.default_vbenchmark_dir_virt,
                 tas_dir=self.defaults.default_vtas_dir_virt)

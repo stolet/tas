@@ -5,7 +5,7 @@ from exps.sensitivity_budget_tp.configs.virt_tas import Config as TasVirtConf
 experiments = []
 
 boosts = [0.94]
-max_budgets = [210000, 420000, 630000, 840000, 1050000]
+max_budgets = [210000,2100000,21000000,210000000,2100000000]
 n_runs = 3
 
 for n_r in range(n_runs):

@@ -3,6 +3,7 @@ sys.path.append("../../../")
 
 import os
 import numpy as np
+import pandas as pd
 import experiments.plot_utils as putils
 
 
@@ -96,7 +97,7 @@ def parse_data(parsed_md):
     data[boost] = data_point
   
   return data
-
+  
 def save_dat_file(data):
   header = "boost virt-tas-avg virt-tas-std\n"
 
