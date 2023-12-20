@@ -5,25 +5,25 @@ import os
 import numpy as np
 import experiments.plot_utils as putils
 
-def check_msize(data, msize):
-  if msize not in data:
-    data[msize] = {}
+def check_nconns(data, nconns):
+  if nconns not in data:
+    data[nconns] = {}
 
-def check_stack(data, msize, stack):
-  if stack not in data[msize]:
-    data[msize][stack] = {}
+def check_stack(data, nconns, stack):
+  if stack not in data[nconns]:
+    data[nconns][stack] = {}
 
-def check_run(data, msize, stack, run):
-  if run not in data[msize][stack]:
-    data[msize][stack][run] = {}
+def check_run(data, nconns, stack, run):
+  if run not in data[nconns][stack]:
+    data[nconns][stack][run] = {}
 
-def check_nid(data, msize, stack, run, nid):
-  if nid not in data[msize][stack][run]:
-    data[msize][stack][run][nid] = {}
+def check_nid(data, nconns, stack, run, nid):
+  if nid not in data[nconns][stack][run]:
+    data[nconns][stack][run][nid] = {}
 
-def check_cid(data, msize, stack, run, nid, cid):
-  if cid not in data[msize][stack][run][nid]:
-    data[msize][stack][run][nid][cid] = ""
+def check_cid(data, nconns, stack, run, nid, cid):
+  if cid not in data[nconns][stack][run][nid]:
+    data[nconns][stack][run][nid][cid] = ""
 
 def get_avg_tp(fname_c0, fname_c1):
   n_messages = 0
@@ -58,36 +58,36 @@ def parse_metadata():
       continue
 
     run = putils.get_expname_run(fname)
-    msize = putils.get_expname_msize(fname)
+    nconns = str(int(putils.get_expname_conns(fname)))
     cid = putils.get_client_id(fname)
     nid = putils.get_node_id(fname)
     stack = putils.get_stack(fname)
 
-    check_msize(data, msize)
-    check_stack(data, msize, stack)
-    check_run(data, msize, stack, run)
-    check_nid(data, msize, stack, run, nid)
-    check_cid(data, msize, stack, run, nid, cid)
+    check_nconns(data, nconns)
+    check_stack(data, nconns, stack)
+    check_run(data, nconns, stack, run)
+    check_nid(data, nconns, stack, run, nid)
+    check_cid(data, nconns, stack, run, nid, cid)
 
-    data[msize][stack][run][nid][cid] = fname
+    data[nconns][stack][run][nid][cid] = fname
 
   return data
 
 def parse_data(parsed_md):
   data = []
   out_dir = "./out/"
-  for msize in parsed_md:
-    data_point = {"msize": msize}
-    for stack in parsed_md[msize]:
+  for nconns in parsed_md:
+    data_point = {"nconns": nconns}
+    for stack in parsed_md[nconns]:
       tp_x = np.array([])
-      for run in parsed_md[msize][stack]:
+      for run in parsed_md[nconns][stack]:
         is_virt = stack == "virt-tas" or stack == "ovs-tas" or stack == "ovs-linux"
         if is_virt:
-          c0_fname = out_dir + parsed_md[msize][stack][run]["0"]["0"]
-          c1_fname = out_dir + parsed_md[msize][stack][run]["1"]["0"]
+          c0_fname = out_dir + parsed_md[nconns][stack][run]["0"]["0"]
+          c1_fname = out_dir + parsed_md[nconns][stack][run]["1"]["0"]
         else:
-          c0_fname = out_dir + parsed_md[msize][stack][run]["0"]["0"]
-          c1_fname = out_dir + parsed_md[msize][stack][run]["0"]["1"]
+          c0_fname = out_dir + parsed_md[nconns][stack][run]["0"]["0"]
+          c1_fname = out_dir + parsed_md[nconns][stack][run]["0"]["1"]
 
         tp = get_avg_tp(c0_fname, c1_fname)
         if tp > 0:
@@ -100,20 +100,20 @@ def parse_data(parsed_md):
   
     data.append(data_point)
   
-  data = sorted(data, key=lambda d: int(d['msize']))
+  data = sorted(data, key=lambda d: int(d['nconns']))
   return data
 
 def save_dat_file(data, fname):
   f = open(fname, "w+")
-  header = "msize " + \
+  header = "nconns " + \
       "bare-tas-avg virt-tas-avg " + \
-      "ovs-tas-avg ovs-linux-avg " + \
+      "ovs-tas-avg ovs-linux-avg" + \
       "bare-tas-std virt-tas-std " + \
       "ovs-tas-std ovs-linux-std\n"
   f.write(header)
   for dp in data:
     f.write("{} {} {} {} {} {} {} {} {}\n".format(
-      dp["msize"],
+      dp["nconns"],
       dp["bare-tas"]["tp"], dp["virt-tas"]["tp"],
       dp["ovs-tas"]["tp"], dp["ovs-linux"]["tp"],
       dp["bare-tas"]["std"], dp["virt-tas"]["std"],

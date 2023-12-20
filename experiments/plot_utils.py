@@ -15,12 +15,9 @@ def init_latencies():
 
 def append_latencies(latencies, fname_c0):
   f = open(fname_c0)
-  lines = f.readlines()
-
-  # Latencies are already accumulated over all time
+  lines = f.readlines()  # Latencies are already accumulated over all time
   # period in the logs
   line = lines[len(lines) - 1]
-
   lat = int(get_50p_lat(line))
   if lat > 0:
     latencies["50p"] = np.append(latencies["50p"], lat)

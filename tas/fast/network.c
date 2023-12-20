@@ -94,9 +94,11 @@ static int reta_setup(void);
 static int reta_mlx5_resize(void);
 static rte_spinlock_t initlock = RTE_SPINLOCK_INITIALIZER;
 
+#if VIRTUOSO_GRE
 static int add_rss_flow_rule(int n_threads);
 static struct rte_flow * add_rss_inbound_flow_rule();
 static void create_queue_idxs(int num_threads, uint16_t *idxs);
+#endif
 
 int network_init(unsigned n_threads)
 {
@@ -535,6 +537,7 @@ static int reta_mlx5_resize(void)
   return 0;
 }
 
+#if VIRTUOSO_GRE
 int add_rss_flow_rule(int n_threads)
 {
   struct rte_flow *in_flow;
@@ -550,7 +553,9 @@ int add_rss_flow_rule(int n_threads)
   return 0;
 
 }
+#endif
 
+#if VIRTUOSO_GRE
 static struct rte_flow * add_rss_inbound_flow_rule(int n_threads)
 {
   struct rte_flow_attr attr = { .ingress = 1 };
@@ -621,7 +626,9 @@ static struct rte_flow * add_rss_inbound_flow_rule(int n_threads)
   }
 
 }
+#endif
 
+#if VIRTUOSO_GRE
 static void create_queue_idxs(int num_threads, uint16_t *idxs)
 {
   int i;
@@ -631,3 +638,4 @@ static void create_queue_idxs(int num_threads, uint16_t *idxs)
     idxs[i] = i;
   }
 }
+#endif

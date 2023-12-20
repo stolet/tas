@@ -34,7 +34,7 @@ def parse_metadata():
   for f in os.listdir(dir_path):
     fname = os.fsdecode(f)
     
-    if "tas_c" == fname or "latency_hist" in fname:
+    if "tas_c" == fname or "hist" in fname:
       continue
     
     run = putils.get_expname_run(fname)

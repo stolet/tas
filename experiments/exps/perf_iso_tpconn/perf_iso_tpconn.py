@@ -10,7 +10,7 @@ experiments = []
 
 nconns = 500
 n_cores = [5,4,3,2,1]
-n_runs = 3
+n_runs = 1
 
 for n_r in range(n_runs):
   for n_c in n_cores:

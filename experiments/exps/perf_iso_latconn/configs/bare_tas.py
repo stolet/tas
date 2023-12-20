@@ -109,5 +109,6 @@ class Config:
                 cset="client1",
                 bench_dir=self.defaults.default_obenchmark_dir_bare,
                 tas_dir=self.defaults.default_otas_dir_bare)
+
         self.client_configs.append(client0_config)
         self.client_configs.append(client1_config)
