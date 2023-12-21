@@ -36,6 +36,7 @@
 #include <rte_cycles.h>
 
 #include <utils.h>
+#include <virtuoso.h>
 #include <utils_sync.h>
 
 #include "internal.h"
@@ -392,7 +393,6 @@ static inline int vm_qman_poll(struct dataplane_context *ctx,
   uint32_t idx;
   int cnt, temp_cnt, x, bytes_sum;
   struct qman_thread *t = &ctx->qman;
-  struct vm_budget *budgets = ctx->budgets;
   struct vm_qman *vqman = t->vqman;
   struct flow_qman *fqman;
   struct vm_queue *vq, *rvq;
@@ -414,7 +414,7 @@ static inline int vm_qman_poll(struct dataplane_context *ctx,
     if (vq->next_idx == IDXLIST_INVAL)
       vqman->tail_idx = IDXLIST_INVAL;
 
-    if (budgets[idx].budget > 0)
+    if (get_budget(idx) > 0)
     {
       fqman = vq->fqman;
       skpl_state->rate_limited = 0;

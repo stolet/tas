@@ -159,10 +159,6 @@ int dataplane_context_init(struct dataplane_context *ctx)
 
   for (i = 0; i < FLEXNIC_PL_VMST_NUM; i++)
   {
-    /* Initialize budget for each VM */
-    ctx->budgets[i].vmid = i;
-    ctx->budgets[i].budget = config.bu_max_budget;
-
     /* Set phase counters to 0 */
     ctx->vm_counters[i] = 0;
     
@@ -860,7 +856,7 @@ static void spend_budget(struct dataplane_context *ctx, uint64_t cycles)
     assert(counter <= ctx->counters_total);
     assert(ratio >= 0 && ratio <= 1);
     vm_cycles = cycles * ratio;
-    __sync_fetch_and_sub(&ctx->budgets[vmid].budget, vm_cycles);
+    sub_budget(vmid, vm_cycles);
     ctx->vm_counters[vmid] = 0;
   }
 

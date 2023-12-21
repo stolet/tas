@@ -82,14 +82,6 @@ struct polled_vm {
   struct polled_context ctxs[FLEXNIC_PL_APPST_CTX_NUM];
 };
 
-struct vm_budget {
-  uint16_t vmid;
-  volatile int64_t budget;
-  volatile uint64_t cycles_poll;
-  volatile uint64_t cycles_tx;
-  volatile uint64_t cycles_rx;
-};
-
 struct dataplane_context {
   struct network_thread net;
   struct qman_thread qman;
@@ -123,7 +115,6 @@ struct dataplane_context {
   /* group resource budget */
   int counters_total;
   int vm_counters[FLEXNIC_PL_VMST_NUM];
-  struct vm_budget budgets[FLEXNIC_PL_VMST_NUM];
 
   /********************************************************/
   /* pre-allocated buffers for polling doorbells and queue manager */

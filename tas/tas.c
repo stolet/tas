@@ -40,6 +40,7 @@
 #include <tas_memif.h>
 #include <utils_timeout.h>
 #include <utils_sync.h>
+#include <virtuoso.h>
 
 #include <tas.h>
 #include <fastpath.h>
@@ -266,51 +267,10 @@ uint64_t sum_hist(uint64_t hist[16 + 1], int n)
   return sum;
 }
 
-struct budget_statistics get_budget_stats(int vmid, int ctxid)
-{
-  struct budget_statistics stats;
-
-  /* Get stats for this logging round */
-  stats.budget = ctxs[ctxid]->budgets[vmid].budget;
-  stats.cycles_poll = ctxs[ctxid]->budgets[vmid].cycles_poll;
-  stats.cycles_tx = ctxs[ctxid]->budgets[vmid].cycles_tx;
-  stats.cycles_rx = ctxs[ctxid]->budgets[vmid].cycles_rx;
-  stats.cycles_total = stats.cycles_poll + stats.cycles_tx + stats.cycles_rx;
-
-  /* Reset stats for this logging round (budget is not reset) */
-  __sync_fetch_and_sub(&ctxs[ctxid]->budgets[vmid].cycles_poll,
-      stats.cycles_poll);
-
-  __sync_fetch_and_sub(&ctxs[ctxid]->budgets[vmid].cycles_tx,
-      stats.cycles_tx);
-
-  __sync_fetch_and_sub(&ctxs[ctxid]->budgets[vmid].cycles_rx,
-      stats.cycles_rx);
-
-  return stats;
-}
-
-void print_budget() {
-  for (int vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++)
-  {
-    for (int ctxid = 0; ctxid < threads_launched; ctxid++)
-    {
-      fprintf(stderr, "vmid=%d ctxid=%d budget=%ld\n",
-          vmid, ctxid, ctxs[ctxid]->budgets[vmid].budget);
-    }
-  }
-}
-
-uint64_t get_budget_delta(int vmid, int ctxid)
-{
-  int64_t budget = __sync_fetch_and_add(&ctxs[ctxid]->budgets[vmid].budget, 0);
-  return config.bu_max_budget - budget;
-}
-
-void boost_budget(int vmid, int ctxid, int64_t incr)
+void boost_budget(int vmid, int64_t incr)
 {
   int64_t old_budget, new_budget, max_budget;
-  old_budget = __sync_fetch_and_add(&ctxs[ctxid]->budgets[vmid].budget, 0);
+  old_budget = get_budget(vmid);
   new_budget = old_budget + incr;
   max_budget = config.bu_max_budget;  
 
@@ -318,7 +278,7 @@ void boost_budget(int vmid, int ctxid, int64_t incr)
   {
     incr = max_budget - old_budget;
   }
-  __sync_fetch_and_add(&ctxs[ctxid]->budgets[vmid].budget, incr);
+  add_budget(vmid, incr);
 }
 
 void flexnic_loadmon(uint32_t ts)

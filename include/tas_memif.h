@@ -446,6 +446,15 @@ struct flextcp_pl_ovsctx {
   uint32_t tx_tail;
 } __attribute__((packed));
 
+/** VM budget in CPU cycles */
+struct vm_budget {
+  uint16_t vmid;
+  volatile int64_t budget;
+  volatile uint64_t cycles_poll;
+  volatile uint64_t cycles_tx;
+  volatile uint64_t cycles_rx;
+};
+
 /** Layout of internal pipeline memory */
 struct flextcp_pl_mem {
   /* registers for application context queues */
@@ -469,6 +478,9 @@ struct flextcp_pl_mem {
 
   /* register for ovs to tas queue */
   struct flextcp_pl_ovsctx ovstas;
+
+  /* global resource budget */
+  struct vm_budget budgets[FLEXNIC_PL_VMST_NUM];
 
   uint8_t flow_group_steering[FLEXNIC_PL_MAX_FLOWGROUPS];
 } __attribute__((packed));
