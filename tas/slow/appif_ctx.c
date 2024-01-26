@@ -57,6 +57,8 @@ static void appif_ctx_kick(struct app_context *ctx)
 void appif_conn_opened(struct connection *c, int status)
 {
   struct app_context *ctx = c->ctx;
+  struct application *app = ctx->app;
+  struct connection *c_i;
   volatile struct kernel_appin *kout = ctx->kout_base;
   uint32_t kout_pos = ctx->kout_pos;
 
@@ -83,6 +85,18 @@ void appif_conn_opened(struct connection *c, int status)
     kout->data.conn_opened.flow_id = c->flow_id;
     kout->data.conn_opened.fn_core = c->fn_core;
   } else {
+    /* remove from app connection list */
+    if (app->conns == c) {
+      app->conns = c->app_next;
+    } else {
+      for (c_i = app->conns; c_i != NULL && c_i->app_next != c;
+          c_i = c_i->app_next);
+      if (c_i == NULL) {
+        fprintf(stderr, "appif_conn_closed: connection not found\n");
+        abort();
+      }
+      c_i->app_next = c->app_next;
+    }
     tcp_destroy(c);
   }
 
