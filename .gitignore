@@ -4,6 +4,8 @@
 *.swp
 *.swo
 *.json
+*.log
+out/
 tas/tas
 tests/bench_ll_echo
 tests/lowlevel
