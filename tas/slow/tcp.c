@@ -1007,9 +1007,9 @@ static inline int send_control_raw(uint64_t remote_mac, uint32_t remote_ip,
   optlen = 0;
   off_mss = optlen;
   optlen += (mss_opt ? sizeof(*opt_mss) : 0);
-  off_ts = optlen;
   off_ws = optlen;
   optlen += (ws_opt ? sizeof(*opt_ws) : 0);
+  off_ts = optlen;
   optlen += (ts_opt ? sizeof(*opt_ts) : 0);
   optlen = (optlen + 3) & ~3;
   len = sizeof(*p) + optlen;
@@ -1154,6 +1154,7 @@ static inline int parse_options(const struct pkt_tcp *p, uint16_t len,
                 "got %u)\n", sizeof(struct tcp_ws_opt), opt_len);
           return -1;
         }
+
         opts->ws = (struct tcp_ws_opt *) (opt + off);
       } else if (opt_kind == TCP_OPT_TIMESTAMP) {
         if (opt_len != sizeof(struct tcp_timestamp_opt)) {

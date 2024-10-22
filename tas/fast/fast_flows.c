@@ -338,11 +338,11 @@ int fast_flows_packet(struct dataplane_context *ctx,
 #ifdef PL_DEBUG_ARX
   fprintf(stderr, "FLOW local=%08x:%05u remote=%08x:%05u  ST: op=%"PRIx64
       " rx_pos=%x rx_next_seq=%u rx_avail=%x  tx_pos=%x tx_next_seq=%u"
-      " tx_sent=%u\n",
+      " tx_sent=%u tx_window_scale=%u rx_window_scale=%u\n",
       f_beui32(p->ip.dest), f_beui16(p->tcp.dest),
       f_beui32(p->ip.src), f_beui16(p->tcp.src), fs->opaque, fs->rx_next_pos,
       fs->rx_next_seq, fs->rx_avail, fs->tx_next_pos, fs->tx_next_seq,
-      fs->tx_sent);
+      fs->tx_sent, fs->tx_window_scale, fs->rx_window_scale);
 #endif
 
   /* state indicates slow path */
