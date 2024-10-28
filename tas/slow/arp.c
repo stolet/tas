@@ -34,7 +34,7 @@
 #include "internal.h"
 
 #define ARP_DEBUG(x...) do { } while (0)
-/*#define ARP_DEBUG(x...) fprintf(stderr, "arp: " x)*/
+// #define ARP_DEBUG(x...) fprintf(stderr, "arp: " x)
 
 struct arp_entry {
     int status;
@@ -174,7 +174,7 @@ void arp_packet(const void *pkt, uint16_t len)
 
     /* handle ARP response */
     if ((ae = ae_lookup(f_beui32(arp->spa))) == NULL) {
-      ARP_DEBUG(stderr, "arp_packet: response has no entry\n");
+      ARP_DEBUG("arp_packet: response has no entry\n");
       return;
     }
 

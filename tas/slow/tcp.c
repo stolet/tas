@@ -38,7 +38,7 @@
 #include <utils_rng.h>
 #include "internal.h"
 
-#define TCP_MSS 1412
+#define TCP_MSS 8912
 #define TCP_HTSIZE 4096
 
 #define PORT_MAX ((1u << 16) - 1)
@@ -55,8 +55,8 @@
 
 #define CONN_DEBUG(c, f, x...) do { } while (0)
 #define CONN_DEBUG0(c, f) do { } while (0)
-/*#define CONN_DEBUG(c, f, x...) fprintf(stderr, "conn(%p): " f, c, x)
-#define CONN_DEBUG0(c, f, x...) fprintf(stderr, "conn(%p): " f, c)*/
+// #define CONN_DEBUG(c, f, x...) fprintf(stderr, "conn(%p): " f, c, x)
+// #define CONN_DEBUG0(c, f, x...) fprintf(stderr, "conn(%p): " f, c)
 
 struct listen_multi {
   size_t num;
