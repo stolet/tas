@@ -1030,7 +1030,7 @@ static inline int send_control_raw(uint64_t remote_mac, uint32_t remote_ip,
   p->ip._tos = 0;
   p->ip.len = t_beui16(len - offsetof(struct pkt_tcp, ip));
   p->ip.id = t_beui16(3); /* TODO: not sure why we have 3 here */
-  p->ip.offset = t_beui16(0);
+  IPH_DF_OFFSET_SET(&p->ip, 1, 0);
   p->ip.ttl = 0xff;
   p->ip.proto = IP_PROTO_TCP;
   p->ip.chksum = 0;
@@ -1070,7 +1070,10 @@ static inline int send_control_raw(uint64_t remote_mac, uint32_t remote_ip,
     opt_ts->kind = TCP_OPT_TIMESTAMP;
     opt_ts->length = sizeof(*opt_ts);
     opt_ts->ts_val = t_beui32(0);
-    opt_ts->ts_ecr = t_beui32(ts_echo);
+    if (config.fp_gro)
+      opt_ts->ts_ecr = t_beui32(0);
+    else
+      opt_ts->ts_ecr = t_beui32(ts_echo);
   }
 
   /* calculate header checksums */

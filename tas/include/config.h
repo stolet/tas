@@ -125,6 +125,8 @@ struct configuration {
   uint32_t fp_rss;
   /** FP: use huge pages for internal and buffer memory */
   uint32_t fp_hugepages;
+  /** FP: use GRO to reassemble packets */
+  uint32_t fp_gro;
   /** FP: enable vlan stripping */
   uint32_t fp_vlan_strip;
   /** FP: polling interval for TAS */

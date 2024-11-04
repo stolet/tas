@@ -29,6 +29,7 @@
 #include <stdint.h>
 
 #include <rte_interrupts.h>
+#include <rte_gro.h>
 
 #include <tas_memif.h>
 #include <utils_rng.h>
@@ -85,6 +86,10 @@ struct dataplane_context {
   /********************************************************/
   /* polling queues */
   uint32_t poll_next_ctx;
+
+  /********************************************************/
+  /* gro configuration */
+  struct rte_gro_param gro_param;
 
   /********************************************************/
   /* pre-allocated buffers for polling doorbells and queue manager */

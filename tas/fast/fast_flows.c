@@ -902,7 +902,7 @@ static void flow_tx_segment(struct dataplane_context *ctx,
   p->ip._tos = 0;
   p->ip.len = t_beui16(hdrs_len - offsetof(struct pkt_tcp, ip) + payload);
   p->ip.id = t_beui16(3); /* TODO: not sure why we have 3 here */
-  p->ip.offset = t_beui16(0);
+  IPH_DF_OFFSET_SET(&p->ip, 1, 0);
   p->ip.ttl = 0xff;
   p->ip.proto = IP_PROTO_TCP;
   p->ip.chksum = 0;
@@ -920,7 +920,10 @@ static void flow_tx_segment(struct dataplane_context *ctx,
   p->tcp.dest = fs->remote_port;
   p->tcp.seqno = t_beui32(seq);
   p->tcp.ackno = t_beui32(ack);
-  TCPH_HDRLEN_FLAGS_SET(&p->tcp, 5 + optlen / 4, TCP_PSH | TCP_ACK | fin_fl);
+  if (config.fp_gro)
+    TCPH_HDRLEN_FLAGS_SET(&p->tcp, 5 + optlen / 4, TCP_ACK | fin_fl);
+  else
+    TCPH_HDRLEN_FLAGS_SET(&p->tcp, 5 + optlen / 4, TCP_PSH | TCP_ACK | fin_fl);
   p->tcp.wnd = t_beui16(MIN(0xFFFF, rxwnd >> window_scale));
   p->tcp.chksum = 0;
   p->tcp.urgp = t_beui16(0);
@@ -930,8 +933,16 @@ static void flow_tx_segment(struct dataplane_context *ctx,
   opt_ts = (struct tcp_timestamp_opt *) (p + 1);
   opt_ts->kind = TCP_OPT_TIMESTAMP;
   opt_ts->length = sizeof(*opt_ts);
-  opt_ts->ts_val = t_beui32(ts_my);
-  opt_ts->ts_ecr = t_beui32(ts_echo);
+  if (config.fp_gro)
+  {
+    opt_ts->ts_val = t_beui32(0);
+    opt_ts->ts_ecr = t_beui32(0);
+  }
+  else
+  {
+    opt_ts->ts_val = t_beui32(ts_my);
+    opt_ts->ts_ecr = t_beui32(ts_echo);
+  }
 
   /* add payload if requested */
   if (payload > 0) {
@@ -1009,8 +1020,16 @@ static void flow_tx_ack(struct dataplane_context *ctx, uint32_t seq,
   p->tcp.urgp = t_beui16(0);
 
   /* fill in timestamp option */
-  ts_opt->ts_val = t_beui32(myts);
-  ts_opt->ts_ecr = t_beui32(echots);
+  if (config.fp_gro)
+  {
+    ts_opt->ts_val = t_beui32(0);
+    ts_opt->ts_ecr = t_beui32(0);
+  }
+  else
+  {
+    ts_opt->ts_val = t_beui32(myts);
+    ts_opt->ts_ecr = t_beui32(echots);
+  }
 
   p->ip.len = t_beui16(hdrlen - offsetof(struct pkt_tcp, ip));
   p->ip.ttl = 0xff;
@@ -1086,6 +1105,25 @@ static inline uint32_t flow_hash(struct flow_key *k)
 {
   return crc32c_sse42_u32(k->local_port.x | (((uint32_t) k->remote_port.x) << 16),
       crc32c_sse42_u64(k->local_ip.x | (((uint64_t) k->remote_ip.x) << 32), 0));
+}
+
+void fast_flows_mbuf_lens(struct network_buf_handle **nbhs, uint16_t n)
+{
+  int i;
+  struct pkt_tcp *p;
+  struct rte_mbuf **mbs;
+
+  mbs = (struct rte_mbuf **) nbhs;
+  for (i = 0; i < n; i++)
+  {
+    p = network_buf_bufoff(nbhs[i]);
+    mbs[i]->l2_len = sizeof(struct eth_hdr);
+    mbs[i]->l3_len = sizeof(struct ip_hdr);
+    mbs[i]->outer_l2_len = 0;
+    mbs[i]->outer_l3_len = 0;
+    mbs[i]->l4_len = TCPH_HDRLEN(&p->tcp) * 4;
+    mbs[i]->packet_type = RTE_PTYPE_L4_TCP | RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L2_ETHER;
+  }
 }
 
 void fast_flows_packet_fss(struct dataplane_context *ctx,

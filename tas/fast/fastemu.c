@@ -123,6 +123,11 @@ int dataplane_context_init(struct dataplane_context *ctx)
     return -1;
   }
 
+  // Initialize params used for GRO
+  ctx->gro_param.gro_types = RTE_GRO_TCP_IPV4;
+  ctx->gro_param.max_flow_num = BATCH_SIZE;
+  ctx->gro_param.max_item_per_flow = BATCH_SIZE;
+
   ctx->poll_next_ctx = ctx->id;
 
   ctx->evfd = eventfd(0, EFD_NONBLOCK);
@@ -257,7 +262,7 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
     uint64_t tsc)
 {
   int ret;
-  unsigned i, n;
+  unsigned i, n, n_deq;
   uint8_t freebuf[BATCH_SIZE] = { 0 };
   void *fss[BATCH_SIZE];
   struct tcp_opts tcpopts[BATCH_SIZE];
@@ -271,6 +276,7 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
 
   /* receive packets */
   ret = network_poll(&ctx->net, n, bhs);
+  n_deq = ret;
   if (ret <= 0) {
     STATS_ADD(ctx, rx_empty, 1);
     return 0;
@@ -282,6 +288,16 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
   for (i = 0; i < n; i++) {
     rte_prefetch0(network_buf_bufoff(bhs[i]));
   }
+
+  if (config.fp_gro)
+  {
+    /* Add len to mbufs so GRO can reassemble */
+    fast_flows_mbuf_lens(bhs, n);
+
+    /* Merge packets from same flow with GRO */
+    n = rte_gro_reassemble_burst((struct rte_mbuf **) bhs, n, &ctx->gro_param);
+  }
+
 
   /* look up flow states */
   fast_flows_packet_fss(ctx, bhs, fss, n);
@@ -312,7 +328,7 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
   arx_cache_flush(ctx, tsc);
 
   /* free received buffers */
-  for (i = 0; i < n; i++) {
+  for (i = 0; i < n_deq; i++) {
     if (freebuf[i] == 0)
       bufcache_free(ctx, bhs[i]);
   }
@@ -392,7 +408,7 @@ static unsigned poll_kernel(struct dataplane_context *ctx, uint32_t ts)
 
   for (k = 0; k < max;) {
     ret = fast_kernel_poll(ctx, handles[k], ts);
- 
+
     if (ret == 0)
       k++;
     else if (ret < 0)

@@ -59,7 +59,7 @@ static inline uint16_t network_buf_off(struct network_buf_handle *bh)
 
 static inline uint16_t network_buf_len(struct network_buf_handle *bh)
 {
-  return ((struct rte_mbuf *) bh)->data_len;
+  return ((struct rte_mbuf *) bh)->pkt_len;
 }
 
 static inline void *network_buf_buf(struct network_buf_handle *bh)

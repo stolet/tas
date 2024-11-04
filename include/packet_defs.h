@@ -58,6 +58,7 @@ struct eth_hdr {
 #define IPH_VHL_SET(hdr, v, hl) (hdr)->_v_hl = (((v) << 4) | (hl))
 #define IPH_TOS_SET(hdr, tos) (hdr)->_tos = (tos)
 #define IPH_ECN_SET(hdr, e) (hdr)->_tos = ((hdr)->_tos & 0xffc) | (e)
+#define IPH_DF_OFFSET_SET(hdr, df, offset) (hdr)->_flags_offset = htons((df << 14) | (offset))
 
 #define IP_HLEN 20
 
@@ -86,8 +87,8 @@ struct ip_hdr {
   beui16_t len;
   /* identification */
   beui16_t id;
-  /* fragment offset field */
-  beui16_t offset;
+  /* flags and fragment offset field */
+  uint16_t _flags_offset;
   /* time to live */
   uint8_t ttl;
   /* protocol*/

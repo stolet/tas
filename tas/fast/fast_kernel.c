@@ -158,7 +158,10 @@ static inline void inject_tcp_ts(void *buf, uint16_t len, uint32_t ts,
     return;
   }
 
-  opts.ts->ts_val = t_beui32(ts);
+  if (config.fp_gro)
+    opts.ts->ts_val = t_beui32(0);
+  else
+    opts.ts->ts_val = t_beui32(ts);
 
   fast_flows_kernelxsums(nbh, p);
 }
