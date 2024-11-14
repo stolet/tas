@@ -36,6 +36,7 @@
 #include <rte_ip.h>
 #include <rte_version.h>
 #include <rte_spinlock.h>
+#include <rte_dmadev.h>
 
 #include <utils.h>
 #include <utils_rng.h>
@@ -44,6 +45,7 @@
 
 #define PERTHREAD_MBUFS 2048
 #define MBUF_SIZE (BUFFER_SIZE + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM)
+#define DMA_DESCRIPTORS 4096
 #define RX_DESCRIPTORS 256
 #define TX_DESCRIPTORS 128
 
@@ -88,6 +90,9 @@ static struct rte_mempool *mempool_alloc(void);
 static int reta_setup(void);
 static int reta_mlx5_resize(void);
 static rte_spinlock_t initlock = RTE_SPINLOCK_INITIALIZER;
+
+static int dmadev_assign();
+static int dmadev_configure_queue(uint32_t dev_id);
 
 int network_init(unsigned n_threads)
 {
@@ -193,6 +198,77 @@ error_exit:
   return -1;
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+static int dmadev_assign(void)
+{
+
+  int ret;
+  int16_t dev_id;
+
+  dev_id = rte_dma_next_dev(0);
+  if (dev_id < 0)
+  {
+    fprintf(stderr, "assign_dmadevs: no valid dma device\n");
+    return -1;
+  }
+
+  ret = dmadev_configure_queue(dev_id);
+  if (ret < 0)
+  {
+    fprintf(stderr, "dmadev_assign: failed to configure queue\n");
+    return -1;
+  }
+
+  return 0;
+}
+#pragma GCC diagnostic pop
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+static int dmadev_configure_queue(uint32_t dev_id)
+{
+  struct rte_dma_info info;
+
+  struct rte_dma_conf dev_config = { .nb_vchans = 1 };
+  struct rte_dma_vchan_conf qconf = {
+    .direction = RTE_DMA_DIR_MEM_TO_MEM,
+    .nb_desc = DMA_DESCRIPTORS
+  };
+
+  uint16_t vchan = 0;
+
+  if (rte_dma_configure(dev_id, &dev_config) != 0)
+  {
+    fprintf(stderr, "dmadev_configure_queue: dma configure failed\n");
+    return -1;
+  }
+
+	if (rte_dma_vchan_setup(dev_id, vchan, &qconf) != 0)
+  {
+    fprintf(stderr, "dmadev_configure_queue: dma vchan setup failed\n");
+    return -1;
+	}
+
+	rte_dma_info_get(dev_id, &info);
+	if (info.nb_vchans != 1)
+  {
+		fprintf(stderr,
+        "dmadev_configure_queue: dma info get failed for dev=%d\n",
+        dev_id);
+		return -1;
+	}
+
+	if (rte_dma_start(dev_id) != 0)
+  {
+    fprintf(stderr, "dmadev_configure_queue: dma start failed\n");
+    return -1;
+  }
+
+  return 0;
+}
+#pragma GCC diagnostic pop
+
 void network_cleanup(void)
 {
   rte_eth_dev_stop(net_port_id);
@@ -280,6 +356,14 @@ int network_thread_init(struct dataplane_context *ctx)
       goto error_tx_queue;
     }
     start_done = 1;
+
+    /* Assign DMA devs for zero-copy */
+    ret = dmadev_assign();
+    if (ret < 0)
+    {
+      fprintf(stderr, "rte_eth_dev_configure: failed to assign dma device\n");
+      goto error_tx_queue;
+    }
   }
 
   /* barrier wait for main thread to start the device */
