@@ -30,6 +30,7 @@
 
 #include <rte_config.h>
 #include <rte_memcpy.h>
+#include <rte_dmadev.h>
 #include <tas.h>
 
 #ifdef DATAPLANE_STATS
@@ -51,6 +52,61 @@ static inline void dma_read(uintptr_t addr, size_t len, void *buf)
       MIN(len, UINT16_MAX - sizeof(evt)), buf);
 #endif
 }
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+static inline int dma_ioat_read(uintptr_t addr, size_t len, void *buf)
+{
+  int ret;
+  assert(addr + len >= addr && addr + len <= config.shm_len);
+
+  ret = rte_dma_copy(0, 0, rte_mem_virt2iova(tas_shm + addr),
+      rte_mem_virt2iova(buf), len, 0);
+  assert(ret >= 0);
+
+#ifdef FLEXNIC_TRACE_DMA
+  struct flexnic_trace_entry_dma evt = {
+      .addr = addr,
+      .len = len,
+    };
+  trace_event2(FLEXNIC_TRACE_EV_DMARD, sizeof(evt), &evt,
+      MIN(len, UINT16_MAX - sizeof(evt)), buf);
+#endif
+  return ret;
+}
+#pragma GCC diagnostic pop
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+static inline int dma_ioat_read_sg(uintptr_t *addrs, size_t *lens, void **bufs, int n)
+{
+  int i, ret;
+  struct rte_dma_sge src[2];
+  struct rte_dma_sge dst[2];
+
+  for (i = 0; i < n; i++)
+  {
+    assert(addrs[i] + lens[i] >= addrs[i] && addrs[i] + lens[i] <= config.shm_len);
+    src->addr = (rte_iova_t) tas_shm + addrs[i];
+    src->length = lens[i];
+    dst->addr = (rte_iova_t) bufs[i];
+    dst->length = lens[i];
+  }
+
+  ret = rte_dma_copy_sg(0, 0, src, dst, n, n, 0);
+
+#ifdef FLEXNIC_TRACE_DMA
+  struct flexnic_trace_entry_dma evt = {
+      .addr = addr,
+      .len = len,
+    };
+  trace_event2(FLEXNIC_TRACE_EV_DMARD, sizeof(evt), &evt,
+      MIN(len, UINT16_MAX - sizeof(evt)), buf);
+#endif
+
+  return ret;
+}
+#pragma GCC diagnostic pop
 
 static inline void dma_write(uintptr_t addr, size_t len, const void *buf)
 {

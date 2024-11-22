@@ -30,6 +30,7 @@
 #include <rte_config.h>
 #include <rte_malloc.h>
 #include <rte_cycles.h>
+#include <rte_dmadev.h>
 
 #include <tas_memif.h>
 
@@ -60,6 +61,7 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
 static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)  __attribute__((noinline));
 static unsigned poll_kernel(struct dataplane_context *ctx, uint32_t ts) __attribute__((noinline));
 static unsigned poll_qman(struct dataplane_context *ctx, uint32_t ts) __attribute__((noinline));
+static int poll_dma(struct dataplane_context *ctx);
 static unsigned poll_qman_fwd(struct dataplane_context *ctx, uint32_t ts) __attribute__((noinline));
 static void poll_scale(struct dataplane_context *ctx);
 
@@ -123,11 +125,6 @@ int dataplane_context_init(struct dataplane_context *ctx)
     return -1;
   }
 
-  // Initialize params used for GRO
-  ctx->gro_param.gro_types = RTE_GRO_TCP_IPV4;
-  ctx->gro_param.max_flow_num = BATCH_SIZE;
-  ctx->gro_param.max_item_per_flow = BATCH_SIZE;
-
   ctx->poll_next_ctx = ctx->id;
 
   ctx->evfd = eventfd(0, EFD_NONBLOCK);
@@ -167,6 +164,7 @@ void dataplane_loop(struct dataplane_context *ctx)
     STATS_TS(start);
     n += poll_rx(ctx, ts, cyc);
     STATS_TS(rx);
+    poll_dma(ctx);
     tx_flush(ctx);
 
     n += poll_qman_fwd(ctx, ts);
@@ -181,6 +179,7 @@ void dataplane_loop(struct dataplane_context *ctx)
     n += poll_kernel(ctx, ts);
 
     /* flush transmit buffer */
+    poll_dma(ctx);
     tx_flush(ctx);
 
     if (ctx->id == 0)
@@ -262,7 +261,7 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
     uint64_t tsc)
 {
   int ret;
-  unsigned i, n, n_deq;
+  unsigned i, n;
   uint8_t freebuf[BATCH_SIZE] = { 0 };
   void *fss[BATCH_SIZE];
   struct tcp_opts tcpopts[BATCH_SIZE];
@@ -276,7 +275,6 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
 
   /* receive packets */
   ret = network_poll(&ctx->net, n, bhs);
-  n_deq = ret;
   if (ret <= 0) {
     STATS_ADD(ctx, rx_empty, 1);
     return 0;
@@ -288,16 +286,6 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
   for (i = 0; i < n; i++) {
     rte_prefetch0(network_buf_bufoff(bhs[i]));
   }
-
-  if (config.fp_gro)
-  {
-    /* Add len to mbufs so GRO can reassemble */
-    fast_flows_mbuf_lens(bhs, n);
-
-    /* Merge packets from same flow with GRO */
-    n = rte_gro_reassemble_burst((struct rte_mbuf **) bhs, n, &ctx->gro_param);
-  }
-
 
   /* look up flow states */
   fast_flows_packet_fss(ctx, bhs, fss, n);
@@ -328,7 +316,7 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
   arx_cache_flush(ctx, tsc);
 
   /* free received buffers */
-  for (i = 0; i < n_deq; i++) {
+  for (i = 0; i < n; i++) {
     if (freebuf[i] == 0)
       bufcache_free(ctx, bhs[i]);
   }
@@ -423,6 +411,8 @@ static unsigned poll_kernel(struct dataplane_context *ctx, uint32_t ts)
   return total;
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 static unsigned poll_qman(struct dataplane_context *ctx, uint32_t ts)
 {
   unsigned q_ids[BATCH_SIZE];
@@ -473,11 +463,51 @@ static unsigned poll_qman(struct dataplane_context *ctx, uint32_t ts)
      off++;
   }
 
+  /* Issue batch of async DMA commands enqueued to the DMA engine
+   * in fast_flows_qman to copy the payload for each used handle
+   */
+  assert(rte_dma_submit(0, 0) == 0);
+
   /* apply buffer reservations */
   bufcache_alloc(ctx, off);
 
   return ret;
 }
+
+#pragma GCC diagnostic pop
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+static int poll_dma(struct dataplane_context *ctx)
+{
+  int i, ncomp;
+  struct dma_op *op;
+  enum rte_dma_status_code status[2 * TXBUF_SIZE];
+
+  /* only send packets that finished copying */
+  ncomp = rte_dma_completed_status(0, 0, ctx->dma_tx_num, NULL, status);
+
+  for (i = 0; i < ncomp; i++)
+  {
+    assert(status[i] == RTE_DMA_STATUS_SUCCESSFUL);
+    op = &ctx->dma_tx_ops[i];
+    if (op->end)
+      tx_send(ctx, op->nbh, op->off, op->hdrs_len + op->payload_len);
+  }
+
+  /* the last op completed is a dma op that was split
+   * because we looped over the ring. in this case we need
+   * to decrement ncomp so that this op gets processed in
+   * the next poll phase with its sibling op.
+   */
+  if (ncomp != 0 && !ctx->dma_tx_ops[ncomp - 1].end)
+    ncomp--;
+
+  ctx->dma_tx_num -= ncomp;
+
+  return ncomp;
+}
+#pragma GCC diagnostic pop
 
 static unsigned poll_qman_fwd(struct dataplane_context *ctx, uint32_t ts)
 {

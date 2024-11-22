@@ -124,7 +124,6 @@ static inline int network_send(struct network_thread *t, unsigned num,
   return rte_eth_tx_burst(net_port_id, t->queue_id, mbs, num);
 }
 
-
 static inline int network_buf_alloc(struct network_thread *t, unsigned num,
     struct network_buf_handle **bhs)
 {

@@ -38,6 +38,14 @@
 #define BUFCACHE_SIZE 128
 #define TXBUF_SIZE (2 * BATCH_SIZE)
 
+struct dma_op {
+  int ring_idx;
+  uint8_t end;
+  uint16_t off;
+  uint16_t hdrs_len;
+  uint16_t payload_len;
+  struct network_buf_handle *nbh;
+};
 
 struct network_thread {
   struct rte_mempool *pool;
@@ -82,6 +90,11 @@ struct dataplane_context {
   /* send buffer */
   struct network_buf_handle *tx_handles[TXBUF_SIZE];
   uint16_t tx_num;
+
+  /********************************************************/
+  /* pending reads from dma engine for send */
+  struct dma_op dma_tx_ops[2 * TXBUF_SIZE];
+  uint16_t dma_tx_num;
 
   /********************************************************/
   /* polling queues */

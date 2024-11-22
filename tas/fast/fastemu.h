@@ -68,6 +68,8 @@ void fast_flows_packet_parse(struct dataplane_context *ctx,
     uint16_t n);
 void fast_flows_packet_pfbufs(struct dataplane_context *ctx,
     void **fss, uint16_t n);
+void tcp_checksums(struct network_buf_handle *nbh,
+    struct pkt_tcp *p, beui32_t ip_s, beui32_t ip_d, uint16_t l3_paylen);
 void fast_flows_kernelxsums(struct network_buf_handle *nbh,
     struct pkt_tcp *p);
 
@@ -78,6 +80,26 @@ void fast_flows_retransmit(struct dataplane_context *ctx, uint32_t flow_id);
 
 /*****************************************************************************/
 /* Helpers */
+
+static inline void tx_send_ack(struct dataplane_context *ctx,
+    struct network_buf_handle *nbh, uint16_t off, uint16_t len, uint16_t ip_len)
+{
+  struct pkt_tcp *p = network_buf_bufoff(nbh);
+  uint32_t i = ctx->tx_num;
+
+  if (i >= TXBUF_SIZE) {
+    fprintf(stderr, "tx_send: transmit buffer full, unexpected\n");
+    abort();
+  }
+
+  if (ip_len != f_beui16(p->ip.len))
+    fprintf(stderr, "\n");
+
+  network_buf_setoff(nbh, off);
+  network_buf_setlen(nbh, len);
+  ctx->tx_handles[i] = nbh;
+  ctx->tx_num = i + 1;
+}
 
 static inline void tx_send(struct dataplane_context *ctx,
     struct network_buf_handle *nbh, uint16_t off, uint16_t len)
