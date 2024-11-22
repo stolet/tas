@@ -229,70 +229,6 @@ int fast_flows_qman_fwd(struct dataplane_context *ctx,
   return 0;
 }
 
-static void packet_dump(void *buf, size_t len)
-{
-  struct eth_hdr *eth = buf;
-  struct arp_hdr *arp = (struct arp_hdr *) (eth + 1);
-  struct ip_hdr *ip = (struct ip_hdr *) (eth + 1);
-  struct tcp_hdr *tcp = (struct tcp_hdr *) (ip + 1);
-  uint8_t *payload = (uint8_t *)(tcp + 1);
-
-  uint64_t sm, dm;
-  uint16_t et, iplen, tcplen;
-
-  if (len < sizeof(*eth)) {
-    fprintf(stderr, "ill formated (short) Ethernet packet");
-    return;
-  }
-
-  sm = dm = 0;
-  memcpy(&sm, &eth->src, ETH_ADDR_LEN);
-  memcpy(&dm, &eth->dest, ETH_ADDR_LEN);
-  et = f_beui16(eth->type);
-  fprintf(stderr, "eth={src=%"PRIx64" dst=%"PRIx64" type=%x}", sm, dm, et);
-
-  if (et == ETH_TYPE_IP) {
-    if (len < sizeof(*eth) + sizeof(*ip)) {
-      fprintf(stderr, " ill formated (short) IPv4 packet");
-      return;
-    }
-
-    fprintf(stderr, " ip={src=%x dst=%x proto=%x}", f_beui32(ip->src),
-        f_beui32(ip->dest), ip->proto);
-    iplen = f_beui16(ip->len) - sizeof(*ip);
-
-    if (ip->proto == IP_PROTO_TCP) {
-      if (len < sizeof(*eth) + sizeof(*ip) + sizeof(*tcp)) {
-        fprintf(stderr, " ill formated (short) TCP packet");
-        return;
-      }
-      tcplen = iplen - sizeof(*tcp) - (TCPH_HDRLEN(tcp) - 5) * 4;
-      fprintf(stderr, " tcp={src=%u dst=%u flags=%x seq=%u ack=%u wnd=%u len=%u}",
-          f_beui16(tcp->src), f_beui16(tcp->dest), TCPH_FLAGS(tcp),
-          f_beui32(tcp->seqno), f_beui32(tcp->ackno), f_beui16(tcp->wnd),
-          tcplen);
-
-      fprintf(stderr, " payload={");
-      for(int i = 0; i < tcplen; i++) {
-	if(i % 16 == 0) {
-	  fprintf(stderr, "\n%08X  ", i);
-	}
-	if(i % 4 == 0) {
-	 fprintf(stderr, " ");
-	}
-	fprintf(stderr, "%02X ", payload[i]);
-      }
-      fprintf(stderr, "}");
-    }
-  } else if (et == ETH_TYPE_ARP) {
-    memcpy(&sm, &arp->sha, ETH_ADDR_LEN);
-    memcpy(&dm, &arp->tha, ETH_ADDR_LEN);
-    fprintf(stderr, " arp={oper=%u spa=%x tpa=%x sha=%"PRIx64" tha=%"PRIx64"}",
-        f_beui16(arp->oper), f_beui32(arp->spa), f_beui32(arp->tpa), sm, dm);
-  }
-  fprintf(stderr, "\n");
-}
-
 void fast_flows_packet_parse(struct dataplane_context *ctx,
     struct network_buf_handle **nbhs, void **fss, struct tcp_opts *tos,
     uint16_t n)
@@ -320,21 +256,7 @@ void fast_flows_packet_parse(struct dataplane_context *ctx,
         (tos[i].ts == NULL);
 
     if (cond)
-    {
-      fprintf(stderr, "pkt_len=%d ip_len=%d size_eth=%ld\n", len, f_beui16(p->ip.len), sizeof(p->eth));
-      fprintf(stderr, "cond1=%d cond2=%d cond3=%d cond4=%d cond5=%d cond6=%d cond7=%d cond8=%d cond9=%d\n",
-          (len < sizeof(*p)),
-          (f_beui16(p->eth.type) != ETH_TYPE_IP),
-          (p->ip.proto != IP_PROTO_TCP),
-          (IPH_V(&p->ip) != 4),
-          (IPH_HL(&p->ip) != 5),
-          (TCPH_HDRLEN(&p->tcp) < 5),
-          (len < f_beui16(p->ip.len) + sizeof(p->eth)),
-          (tcp_parse_options(p, len, &tos[i]) != 0),
-          (tos[i].ts == NULL));
-      packet_dump(p, len);
       fss[i] = NULL;
-    }
   }
 }
 
@@ -917,9 +839,6 @@ out:
 static void flow_tx_read(struct dataplane_context *ctx,
     struct flextcp_pl_flowst *fs, uint32_t pos, uint16_t len, void *dst)
 {
-  // uintptr_t addrs[2];
-  // size_t lens[2];
-  // void *bufs[2];
   int ring_idx;
   uint32_t part;
 
@@ -937,21 +856,6 @@ static void flow_tx_read(struct dataplane_context *ctx,
     ring_idx = dma_ioat_read(fs->tx_base, len - part, (uint8_t *) dst + part);
     ctx->dma_tx_ops[ctx->dma_tx_num].ring_idx = ring_idx;
     ctx->dma_tx_ops[ctx->dma_tx_num].end = 1;
-    // addrs[0] = fs->tx_base + pos;
-    // bufs[0] = dst;
-    // lens[0] = part;
-
-    // addrs[1] = fs->tx_base;
-    // bufs[1] = (uint8_t *) dst + part;
-    // lens[1] = len - part;
-
-    // /* do a scatter gather read so the number of enqueued
-    //  * ops to the dma engine matches the number of packets
-    //  * to transmit
-    //  */
-    // ring_idx = dma_ioat_read_sg(addrs, lens, bufs, 2);
-    // ctx->dma_tx_ops[ctx->dma_tx_num].ring_idx = ring_idx;
-    // ctx->dma_tx_num++;
   }
 
 
@@ -1177,10 +1081,7 @@ static void flow_tx_ack(struct dataplane_context *ctx, uint32_t seq,
   trace_event(FLEXNIC_PL_TREV_TXACK, sizeof(te_txack), &te_txack);
 #endif
 
-  if (hdrlen < ip_len)
-    fprintf(stderr, "whyyyyyy hdrlen=%d ip_len=%d\n", hdrlen, ip_len);
-
-  tx_send_ack(ctx, nbh, network_buf_off(nbh), hdrlen, ip_len);
+  tx_send(ctx, nbh, network_buf_off(nbh), hdrlen);
 }
 
 static void flow_reset_retransmit(struct flextcp_pl_flowst *fs)

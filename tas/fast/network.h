@@ -50,6 +50,7 @@ static inline void network_buf_reset(struct network_buf_handle *bh)
 {
   struct rte_mbuf *mb = (struct rte_mbuf *) bh;
   mb->ol_flags = 0;
+  mb->data_off = 0;
 }
 
 static inline uint16_t network_buf_off(struct network_buf_handle *bh)
