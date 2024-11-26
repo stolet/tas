@@ -489,7 +489,7 @@ static int poll_dma(struct dataplane_context *ctx)
 {
   int i, ncomp;
   struct dma_op *op;
-  uint16_t last_idx, last_op_idx;
+  uint16_t last_idx;
   enum rte_dma_status_code status[DMABUF_SIZE];
 
   if (ctx->dma_tx_num == 0)
@@ -508,19 +508,6 @@ static int poll_dma(struct dataplane_context *ctx)
 
     ctx->dma_tx_start = (ctx->dma_tx_start + 1) % DMABUF_SIZE;
   }
-
-  if (ctx->dma_tx_start == 0)
-    last_op_idx = DMABUF_SIZE - 1;
-  else
-    last_op_idx = ctx->dma_tx_start - 1;
-
-  /* the last op completed is a dma op that was split
-   * because we looped over the ring. in this case we need
-   * to decrement ncomp so that this op gets processed in
-   * the next poll phase with its sibling op.
-   */
-  if (ncomp != 0 && !ctx->dma_tx_ops[last_op_idx].end)
-    ncomp--;
 
   ctx->dma_tx_num -= ncomp;
 
