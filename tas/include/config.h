@@ -127,6 +127,8 @@ struct configuration {
   uint32_t fp_hugepages;
   /** FP: use GRO to reassemble packets */
   uint32_t fp_gro;
+  /** FP: offload fast-path copies for tx to dma engine */
+  uint32_t fp_tx_dma;
   /** FP: enable vlan stripping */
   uint32_t fp_vlan_strip;
   /** FP: polling interval for TAS */

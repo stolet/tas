@@ -77,6 +77,7 @@ enum cfg_params {
   CP_FP_NO_RSS,
   CP_FP_NO_HUGEPAGES,
   CP_FP_GRO,
+  CP_FP_TX_DMA,
   CP_FP_VLAN_STRIP,
   CP_FP_POLL_INTERVAL_TAS,
   CP_FP_POLL_INTERVAL_APP,
@@ -214,6 +215,9 @@ static struct option opts[] = {
     { .name = "fp-gro",
       .has_arg = no_argument,
       .val = CP_FP_GRO },
+    { .name = "fp-tx-dma",
+      .has_arg = no_argument,
+      .val = CP_FP_TX_DMA },
     { .name = "fp-vlan-strip",
       .has_arg = no_argument,
       .val = CP_FP_VLAN_STRIP },
@@ -510,6 +514,9 @@ int config_parse(struct configuration *c, int argc, char *argv[])
       case CP_FP_GRO:
         c->fp_gro = 1;
         break;
+      case CP_FP_TX_DMA:
+        c->fp_tx_dma = 1;
+        break;
       case CP_FP_VLAN_STRIP:
         c->fp_vlan_strip = 1;
         break;
@@ -617,6 +624,7 @@ static int config_defaults(struct configuration *c, char *progname)
   c->fp_autoscale = 1;
   c->fp_rss = 1;
   c->fp_hugepages = 1;
+  c->fp_tx_dma = 0;
   c->fp_gro = 0;
   c->fp_vlan_strip = 0;
   c->fp_poll_interval_tas = 10000;
@@ -725,8 +733,10 @@ static void print_usage(struct configuration *c, char *progname)
           "[default: enabled]\n"
       "  --fp-no-hugepages           Disable hugepages for SHM "
           "[default: enabled]\n"
-      "  --fp-gro                    Enables GRO on the fast-path. This disables the PUSH flag and TS option"
-          "[defailt: disabled\n]"
+      "  --fp-gro                    Enables GRO on the fast-path. This disables the PUSH flag and TS option "
+          "[default: disabled\n]"
+      "  --fp-tx-dma                 Offloads transmit copies in the fast-path to the DMA engine "
+          "[default: disabled\n]"
       "  --fp-poll-interval-tas      TAS polling interval before blocking "
           "in us [default: %"PRIu32"]\n"
       "  --fp-poll-interval-app      App polling interval before blocking "

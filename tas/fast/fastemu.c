@@ -168,7 +168,10 @@ void dataplane_loop(struct dataplane_context *ctx)
     STATS_TS(start);
     n += poll_rx(ctx, ts, cyc);
     STATS_TS(rx);
-    poll_dma(ctx);
+
+    if (config.fp_tx_dma)
+      poll_dma(ctx);
+
     tx_flush(ctx);
 
     n += poll_qman_fwd(ctx, ts);
@@ -183,7 +186,10 @@ void dataplane_loop(struct dataplane_context *ctx)
     n += poll_kernel(ctx, ts);
 
     /* flush transmit buffer */
-    poll_dma(ctx);
+
+    if (config.fp_tx_dma)
+      poll_dma(ctx);
+
     tx_flush(ctx);
 
     if (ctx->id == 0)

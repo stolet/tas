@@ -58,9 +58,10 @@ struct flow_key {
 #endif
 
 
-static void flow_tx_read(struct dataplane_context *ctx,
-    struct flextcp_pl_flowst *fs, uint32_t pos,
+static void flow_tx_read(struct flextcp_pl_flowst *fs, uint32_t pos,
     uint16_t len, void *dst);
+static void flow_tx_read_dma(struct dataplane_context *ctx,
+    struct flextcp_pl_flowst *fs, uint32_t pos, uint16_t len, void *dst);
 static void flow_rx_write(struct flextcp_pl_flowst *fs, uint32_t pos,
     uint16_t len, const void *src);
 #ifdef FLEXNIC_PL_OOO_RECV
@@ -840,7 +841,24 @@ out:
 }
 
 /* read `len` bytes from position `pos` in cirucular transmit buffer */
-static void flow_tx_read(struct dataplane_context *ctx,
+static void flow_tx_read(struct flextcp_pl_flowst *fs, uint32_t pos,
+    uint16_t len, void *dst)
+{
+  uint32_t part;
+
+  if (LIKELY(pos + len <= fs->tx_len)) {
+    dma_read(fs->tx_base + pos, len, dst);
+  } else {
+    part = fs->tx_len - pos;
+    dma_read(fs->tx_base + pos, part, dst);
+    dma_read(fs->tx_base, len - part, (uint8_t *) dst + part);
+  }
+}
+
+/* offloads read to the dma engine
+ *
+ */
+static void flow_tx_read_dma(struct dataplane_context *ctx,
     struct flextcp_pl_flowst *fs, uint32_t pos, uint16_t len, void *dst)
 {
   int ring_idx;
@@ -862,8 +880,6 @@ static void flow_tx_read(struct dataplane_context *ctx,
     ctx->dma_tx_ops[ctx->dma_tx_end].ring_idx = ring_idx;
     ctx->dma_tx_ops[ctx->dma_tx_end].end = 1;
   }
-
-
 }
 
 /* write `len` bytes to position `pos` in cirucular receive buffer */
@@ -964,27 +980,37 @@ static void flow_tx_segment(struct dataplane_context *ctx,
   tcp_checksums(nbh, p, fs->local_ip, fs->remote_ip,
         hdrs_len - offsetof(struct pkt_tcp, tcp) + payload);
 
-  /* add payload if requested */
-  if (payload > 0) {
-    if (ctx->dma_tx_num >= DMABUF_SIZE) {
-      fprintf(stderr, "flow_tx_segment: dma ops buffer full, unexpected\n");
-      abort();
+  if (config.fp_tx_dma)
+  {
+    /* add payload if requested */
+    if (payload > 0) {
+      if (ctx->dma_tx_num >= DMABUF_SIZE) {
+        fprintf(stderr, "flow_tx_segment: dma ops buffer full, unexpected\n");
+        abort();
+      }
+
+      flow_tx_read_dma(ctx, fs, payload_pos, payload, (uint8_t *) p + hdrs_len);
+
+      /* we need to update dma_tx_ops after flow_tx_read and not before.
+      * a packet may be divided between two ops and the second op (the end)
+      * will be the one to contain the metadata
+      */
+      ctx->dma_tx_ops[ctx->dma_tx_end].nbh = nbh;
+      ctx->dma_tx_ops[ctx->dma_tx_end].off = 0;
+      ctx->dma_tx_ops[ctx->dma_tx_end].payload_len = payload;
+      ctx->dma_tx_ops[ctx->dma_tx_end].hdrs_len = hdrs_len;
+      ctx->dma_tx_end = (ctx->dma_tx_end + 1) % DMABUF_SIZE;
+      ctx->dma_tx_num++;
     }
-
-    flow_tx_read(ctx, fs, payload_pos, payload, (uint8_t *) p + hdrs_len);
-
-    /* we need to update dma_tx_ops after flow_tx_read and not before.
-     * a packet may be divided between two ops and the second op (the end)
-     * will be the one to contain the metadata
-     */
-    ctx->dma_tx_ops[ctx->dma_tx_end].nbh = nbh;
-    ctx->dma_tx_ops[ctx->dma_tx_end].off = 0;
-    ctx->dma_tx_ops[ctx->dma_tx_end].payload_len = payload;
-    ctx->dma_tx_ops[ctx->dma_tx_end].hdrs_len = hdrs_len;
-    ctx->dma_tx_end = (ctx->dma_tx_end + 1) % DMABUF_SIZE;
-    ctx->dma_tx_num++;
+    else {
+      tx_send(ctx, nbh, 0, hdrs_len + payload);
+    }
   }
-  else {
+  else
+  {
+    if (payload > 0)
+      flow_tx_read(fs, payload_pos, payload, (uint8_t *) p + hdrs_len);
+
     tx_send(ctx, nbh, 0, hdrs_len + payload);
   }
 
