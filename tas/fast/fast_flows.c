@@ -640,7 +640,11 @@ unlock:
   }
 
   fs_unlock(fs);
-  return trigger_ack;
+
+  if (trigger_ack)
+    return RX_ACK_SENT;
+  else
+    return RX_NO_ACK_SENT;
 
 slowpath:
   if (!no_permanent_sp) {
@@ -649,7 +653,7 @@ slowpath:
 
   fs_unlock(fs);
   /* TODO: should pass current flow state to kernel as well */
-  return -1;
+  return RX_SLOWPATH;
 }
 
 /* Update receive and transmit queue pointers from application */
@@ -844,18 +848,19 @@ static void flow_tx_read(struct dataplane_context *ctx,
 
   if (LIKELY(pos + len <= fs->tx_len)) {
     ring_idx = dma_ioat_read(fs->tx_base + pos, len, dst);
-    ctx->dma_tx_ops[ctx->dma_tx_num].ring_idx = ring_idx;
-    ctx->dma_tx_ops[ctx->dma_tx_num].end = 1;
+    ctx->dma_tx_ops[ctx->dma_tx_end].ring_idx = ring_idx;
+    ctx->dma_tx_ops[ctx->dma_tx_end].end = 1;
   } else {
     part = fs->tx_len - pos;
     ring_idx = dma_ioat_read(fs->tx_base + pos, part, dst);
-    ctx->dma_tx_ops[ctx->dma_tx_num].ring_idx = ring_idx;
-    ctx->dma_tx_ops[ctx->dma_tx_num].end = 0;
+    ctx->dma_tx_ops[ctx->dma_tx_end].ring_idx = ring_idx;
+    ctx->dma_tx_ops[ctx->dma_tx_end].end = 0;
+    ctx->dma_tx_end = (ctx->dma_tx_end + 1) % DMABUF_SIZE;
     ctx->dma_tx_num++;
 
     ring_idx = dma_ioat_read(fs->tx_base, len - part, (uint8_t *) dst + part);
-    ctx->dma_tx_ops[ctx->dma_tx_num].ring_idx = ring_idx;
-    ctx->dma_tx_ops[ctx->dma_tx_num].end = 1;
+    ctx->dma_tx_ops[ctx->dma_tx_end].ring_idx = ring_idx;
+    ctx->dma_tx_ops[ctx->dma_tx_end].end = 1;
   }
 
 
@@ -961,7 +966,7 @@ static void flow_tx_segment(struct dataplane_context *ctx,
 
   /* add payload if requested */
   if (payload > 0) {
-    if (ctx->dma_tx_num >= TXBUF_SIZE) {
+    if (ctx->dma_tx_num >= DMABUF_SIZE) {
       fprintf(stderr, "flow_tx_segment: dma ops buffer full, unexpected\n");
       abort();
     }
@@ -972,10 +977,11 @@ static void flow_tx_segment(struct dataplane_context *ctx,
      * a packet may be divided between two ops and the second op (the end)
      * will be the one to contain the metadata
      */
-    ctx->dma_tx_ops[ctx->dma_tx_num].nbh = nbh;
-    ctx->dma_tx_ops[ctx->dma_tx_num].off = 0;
-    ctx->dma_tx_ops[ctx->dma_tx_num].payload_len = payload;
-    ctx->dma_tx_ops[ctx->dma_tx_num].hdrs_len = hdrs_len;
+    ctx->dma_tx_ops[ctx->dma_tx_end].nbh = nbh;
+    ctx->dma_tx_ops[ctx->dma_tx_end].off = 0;
+    ctx->dma_tx_ops[ctx->dma_tx_end].payload_len = payload;
+    ctx->dma_tx_ops[ctx->dma_tx_end].hdrs_len = hdrs_len;
+    ctx->dma_tx_end = (ctx->dma_tx_end + 1) % DMABUF_SIZE;
     ctx->dma_tx_num++;
   }
   else {
@@ -1059,7 +1065,6 @@ static void flow_tx_ack(struct dataplane_context *ctx, uint32_t seq,
   }
 
   p->ip.len = t_beui16(hdrlen - offsetof(struct pkt_tcp, ip));
-  uint16_t ip_len = f_beui16(p->ip.len);
   p->ip.ttl = 0xff;
 
   /* checksums */

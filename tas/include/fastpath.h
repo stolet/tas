@@ -37,6 +37,14 @@
 #define BATCH_SIZE 16
 #define BUFCACHE_SIZE 128
 #define TXBUF_SIZE (2 * BATCH_SIZE)
+#define DMABUF_SIZE (2 * TXBUF_SIZE)
+
+
+enum rx_packet_ret {
+  RX_ACK_SENT,
+  RX_NO_ACK_SENT,
+  RX_SLOWPATH
+};
 
 struct dma_op {
   int ring_idx;
@@ -93,7 +101,9 @@ struct dataplane_context {
 
   /********************************************************/
   /* pending reads from dma engine for send */
-  struct dma_op dma_tx_ops[2 * TXBUF_SIZE];
+  struct dma_op dma_tx_ops[DMABUF_SIZE];
+  uint16_t dma_tx_start;
+  uint16_t dma_tx_end;
   uint16_t dma_tx_num;
 
   /********************************************************/

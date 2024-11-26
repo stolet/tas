@@ -125,6 +125,10 @@ int dataplane_context_init(struct dataplane_context *ctx)
     return -1;
   }
 
+  ctx->dma_tx_num = 0;
+  ctx->dma_tx_end = 0;
+  ctx->dma_tx_start = 0;
+
   ctx->poll_next_ctx = ctx->id;
 
   ctx->evfd = eventfd(0, EFD_NONBLOCK);
@@ -303,13 +307,16 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
     if (fss[i] != NULL) {
       ret = fast_flows_packet(ctx, bhs[i], fss[i], &tcpopts[i], ts);
     } else {
-      ret = -1;
+      ret = RX_SLOWPATH;
     }
 
-    if (ret > 0) {
-      freebuf[i] = 1;
-    } else if (ret < 0) {
+    if (ret == RX_ACK_SENT) {
+      freebuf[i] = RX_ACK_SENT;
+    } else if (ret == RX_NO_ACK_SENT) {
+      freebuf[i] = RX_NO_ACK_SENT;
+    } else if (ret == RX_SLOWPATH) {
       fast_kernel_packet(ctx, bhs[i]);
+      freebuf[i] = RX_SLOWPATH;
     }
   }
 
@@ -317,7 +324,7 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
 
   /* free received buffers */
   for (i = 0; i < n; i++) {
-    if (freebuf[i] == 0)
+    if (freebuf[i] == RX_NO_ACK_SENT)
       bufcache_free(ctx, bhs[i]);
   }
 
@@ -482,25 +489,37 @@ static int poll_dma(struct dataplane_context *ctx)
 {
   int i, ncomp;
   struct dma_op *op;
-  enum rte_dma_status_code status[2 * TXBUF_SIZE];
+  uint16_t last_idx, last_op_idx;
+  enum rte_dma_status_code status[DMABUF_SIZE];
+
+  if (ctx->dma_tx_num == 0)
+    return 0;
 
   /* only send packets that finished copying */
-  ncomp = rte_dma_completed_status(0, 0, ctx->dma_tx_num, NULL, status);
+  ncomp = rte_dma_completed_status(0, 0, ctx->dma_tx_num, &last_idx, status);
 
   for (i = 0; i < ncomp; i++)
   {
     assert(status[i] == RTE_DMA_STATUS_SUCCESSFUL);
-    op = &ctx->dma_tx_ops[i];
+    op = &ctx->dma_tx_ops[ctx->dma_tx_start];
+
     if (op->end)
       tx_send(ctx, op->nbh, op->off, op->hdrs_len + op->payload_len);
+
+    ctx->dma_tx_start = (ctx->dma_tx_start + 1) % DMABUF_SIZE;
   }
+
+  if (ctx->dma_tx_start == 0)
+    last_op_idx = DMABUF_SIZE - 1;
+  else
+    last_op_idx = ctx->dma_tx_start - 1;
 
   /* the last op completed is a dma op that was split
    * because we looped over the ring. in this case we need
    * to decrement ncomp so that this op gets processed in
    * the next poll phase with its sibling op.
    */
-  if (ncomp != 0 && !ctx->dma_tx_ops[ncomp - 1].end)
+  if (ncomp != 0 && !ctx->dma_tx_ops[last_op_idx].end)
     ncomp--;
 
   ctx->dma_tx_num -= ncomp;
