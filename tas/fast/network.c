@@ -358,11 +358,14 @@ int network_thread_init(struct dataplane_context *ctx)
     start_done = 1;
 
     /* Assign DMA devs for zero-copy */
-    ret = dmadev_assign();
-    if (ret < 0)
+    if (config.fp_tx_dma)
     {
-      fprintf(stderr, "rte_eth_dev_configure: failed to assign dma device\n");
-      goto error_tx_queue;
+      ret = dmadev_assign();
+      if (ret < 0)
+      {
+        fprintf(stderr, "rte_eth_dev_configure: failed to assign dma device\n");
+        goto error_tx_queue;
+      }
     }
   }
 

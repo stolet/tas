@@ -77,6 +77,9 @@ static inline void tx_send(struct dataplane_context *ctx,
 
 static void arx_cache_flush(struct dataplane_context *ctx, uint64_t tsc) __attribute__((noinline));
 
+#define DMA_SKIP_ROUNDS 10
+static uint32_t dma_rounds = 0;
+
 int dataplane_init(void)
 {
   if (FLEXNIC_INTERNAL_MEM_SIZE < sizeof(struct flextcp_pl_mem)) {
@@ -145,6 +148,8 @@ void dataplane_context_destroy(struct dataplane_context *ctx)
 {
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 void dataplane_loop(struct dataplane_context *ctx)
 {
   struct notify_blockstate nbs;
@@ -172,12 +177,24 @@ void dataplane_loop(struct dataplane_context *ctx)
     if (config.fp_tx_dma)
       poll_dma(ctx);
 
+    /* flush transmit buffer */
     tx_flush(ctx);
 
     n += poll_qman_fwd(ctx, ts);
 
     STATS_TSADD(ctx, cyc_rx, rx - start);
     n += poll_qman(ctx, ts);
+
+    /* Issue batch of async DMA commands enqueued to the DMA engine
+     * in fast_flows_qman to copy the payload for each used handle
+     */
+    if (config.fp_tx_dma)
+    {
+      if ((dma_rounds % DMA_SKIP_ROUNDS) == 0)
+        assert(rte_dma_submit(0, 0) == 0);
+      dma_rounds++;
+    }
+
     STATS_TS(qm);
     STATS_TSADD(ctx, cyc_qm, qm - rx);
     n += poll_queues(ctx, ts);
@@ -185,11 +202,10 @@ void dataplane_loop(struct dataplane_context *ctx)
     STATS_TSADD(ctx, cyc_qs, qs - qm);
     n += poll_kernel(ctx, ts);
 
-    /* flush transmit buffer */
-
     if (config.fp_tx_dma)
       poll_dma(ctx);
 
+    /* flush transmit buffer */
     tx_flush(ctx);
 
     if (ctx->id == 0)
@@ -202,6 +218,7 @@ void dataplane_loop(struct dataplane_context *ctx)
     }
   }
 }
+#pragma GCC diagnostic pop
 
 static void dataplane_block(struct dataplane_context *ctx, uint32_t ts)
 {
@@ -343,13 +360,23 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
   void *aqes[BATCH_SIZE];
   unsigned n, i, total = 0;
   uint16_t max, k = 0, num_bufs = 0, j;
-  int ret;
+  int ret, dma_tx_avail;
 
   STATS_ADD(ctx, qs_poll, 1);
 
   max = BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_num < max)
     max = TXBUF_SIZE - ctx->tx_num;
+
+  if (config.fp_tx_dma)
+  {
+    /* one packet may be split between two dma ops if we reach the
+     * end of the ring so we have two divide the dma buffer size by 2
+     */
+    dma_tx_avail = (DMABUF_SIZE / 2) - ctx->dma_tx_num;
+    if (dma_tx_avail < max)
+      max = dma_tx_avail < 0 ? 0 : dma_tx_avail;
+  }
 
   /* allocate buffers contents */
   max = bufcache_prealloc(ctx, max, &handles);
@@ -397,11 +424,21 @@ static unsigned poll_kernel(struct dataplane_context *ctx, uint32_t ts)
   struct network_buf_handle **handles;
   unsigned total = 0;
   uint16_t max, k = 0;
-  int ret;
+  int ret, dma_tx_avail;
 
   max = BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_num < max)
     max = TXBUF_SIZE - ctx->tx_num;
+
+  if (config.fp_tx_dma)
+  {
+    /* one packet may be split between two dma ops if we reach the
+     * end of the ring so we have two divide the dma buffer size by 2
+     */
+    dma_tx_avail = (DMABUF_SIZE / 2) - ctx->dma_tx_num;
+    if (dma_tx_avail < max)
+      max = dma_tx_avail < 0 ? 0 : dma_tx_avail;
+  }
 
   max = (max > 8 ? 8 : max);
   /* allocate buffers contents */
@@ -424,19 +461,27 @@ static unsigned poll_kernel(struct dataplane_context *ctx, uint32_t ts)
   return total;
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 static unsigned poll_qman(struct dataplane_context *ctx, uint32_t ts)
 {
   unsigned q_ids[BATCH_SIZE];
   uint16_t q_bytes[BATCH_SIZE];
   struct network_buf_handle **handles;
   uint16_t off = 0, max;
-  int ret, i, use;
+  int ret, i, use, dma_tx_avail;
 
   max = BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_num < max)
     max = TXBUF_SIZE - ctx->tx_num;
+
+  if (config.fp_tx_dma)
+  {
+    /* one packet may be split between two dma ops if we reach the
+     * end of the ring so we have two divide the dma buffer size by 2
+     */
+    dma_tx_avail = (DMABUF_SIZE / 2) - ctx->dma_tx_num;
+    if (dma_tx_avail < max)
+      max = dma_tx_avail < 0 ? 0 : dma_tx_avail;
+  }
 
   STATS_ADD(ctx, qm_poll, 1);
 
@@ -476,24 +521,17 @@ static unsigned poll_qman(struct dataplane_context *ctx, uint32_t ts)
      off++;
   }
 
-  /* Issue batch of async DMA commands enqueued to the DMA engine
-   * in fast_flows_qman to copy the payload for each used handle
-   */
-  assert(rte_dma_submit(0, 0) == 0);
-
   /* apply buffer reservations */
   bufcache_alloc(ctx, off);
 
   return ret;
 }
 
-#pragma GCC diagnostic pop
-
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 static int poll_dma(struct dataplane_context *ctx)
 {
-  int i, ncomp;
+  int i, ncomp, max;
   struct dma_op *op;
   uint16_t last_idx;
   enum rte_dma_status_code status[DMABUF_SIZE];
@@ -501,8 +539,12 @@ static int poll_dma(struct dataplane_context *ctx)
   if (ctx->dma_tx_num == 0)
     return 0;
 
+  max = ctx->dma_tx_num;
+  if (max > (TXBUF_SIZE - ctx->tx_num))
+    max = TXBUF_SIZE - ctx->tx_num;
+
   /* only send packets that finished copying */
-  ncomp = rte_dma_completed_status(0, 0, ctx->dma_tx_num, &last_idx, status);
+  ncomp = rte_dma_completed_status(0, 0, max, &last_idx, status);
 
   for (i = 0; i < ncomp; i++)
   {
