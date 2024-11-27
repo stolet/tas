@@ -55,12 +55,12 @@ static inline void dma_read(uintptr_t addr, size_t len, void *buf)
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-static inline int dma_ioat_read(uintptr_t addr, size_t len, void *buf)
+static inline int dma_ioat_read(uint16_t dma_dev, uintptr_t addr, size_t len, void *buf)
 {
   int ret;
   assert(addr + len >= addr && addr + len <= config.shm_len);
 
-  ret = rte_dma_copy(0, 0, rte_mem_virt2iova(tas_shm + addr),
+  ret = rte_dma_copy(dma_dev, 0, rte_mem_virt2iova(tas_shm + addr),
       rte_mem_virt2iova(buf), len, 0);
   assert(ret >= 0);
 

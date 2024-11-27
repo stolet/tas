@@ -191,7 +191,9 @@ void dataplane_loop(struct dataplane_context *ctx)
     if (config.fp_tx_dma)
     {
       if ((dma_rounds % DMA_SKIP_ROUNDS) == 0)
-        assert(rte_dma_submit(0, 0) == 0);
+      {
+        assert(rte_dma_submit(ctx->dma_dev, 0) == 0);
+      }
       dma_rounds++;
     }
 
@@ -534,7 +536,7 @@ static int poll_dma(struct dataplane_context *ctx)
   int i, ncomp, max;
   struct dma_op *op;
   uint16_t last_idx;
-  enum rte_dma_status_code status[DMABUF_SIZE];
+  bool has_err;
 
   if (ctx->dma_tx_num == 0)
     return 0;
@@ -544,11 +546,11 @@ static int poll_dma(struct dataplane_context *ctx)
     max = TXBUF_SIZE - ctx->tx_num;
 
   /* only send packets that finished copying */
-  ncomp = rte_dma_completed_status(0, 0, max, &last_idx, status);
+  ncomp = rte_dma_completed(ctx->dma_dev, 0, max, &last_idx, &has_err);
+  assert(has_err == false);
 
   for (i = 0; i < ncomp; i++)
   {
-    assert(status[i] == RTE_DMA_STATUS_SUCCESSFUL);
     op = &ctx->dma_tx_ops[ctx->dma_tx_start];
 
     if (op->end)

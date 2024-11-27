@@ -200,7 +200,7 @@ error_exit:
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-static int dmadev_assign(void)
+static int dmadev_assign(struct dataplane_context *ctx)
 {
 
   int ret;
@@ -209,7 +209,7 @@ static int dmadev_assign(void)
   dev_id = rte_dma_next_dev(0);
   if (dev_id < 0)
   {
-    fprintf(stderr, "assign_dmadevs: no valid dma device\n");
+    fprintf(stderr, "dmadev_assign: no valid dma device\n");
     return -1;
   }
 
@@ -220,6 +220,7 @@ static int dmadev_assign(void)
     return -1;
   }
 
+  ctx->dma_dev = dev_id;
   return 0;
 }
 #pragma GCC diagnostic pop
@@ -360,7 +361,7 @@ int network_thread_init(struct dataplane_context *ctx)
     /* Assign DMA devs for zero-copy */
     if (config.fp_tx_dma)
     {
-      ret = dmadev_assign();
+      ret = dmadev_assign(ctx);
       if (ret < 0)
       {
         fprintf(stderr, "rte_eth_dev_configure: failed to assign dma device\n");

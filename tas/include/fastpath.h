@@ -101,6 +101,7 @@ struct dataplane_context {
 
   /********************************************************/
   /* pending reads from dma engine for send */
+  uint16_t dma_dev;
   struct dma_op dma_tx_ops[DMABUF_SIZE];
   uint16_t dma_tx_start;
   uint16_t dma_tx_end;

@@ -865,18 +865,18 @@ static void flow_tx_read_dma(struct dataplane_context *ctx,
   uint32_t part;
 
   if (LIKELY(pos + len <= fs->tx_len)) {
-    ring_idx = dma_ioat_read(fs->tx_base + pos, len, dst);
+    ring_idx = dma_ioat_read(ctx->dma_dev, fs->tx_base + pos, len, dst);
     ctx->dma_tx_ops[ctx->dma_tx_end].ring_idx = ring_idx;
     ctx->dma_tx_ops[ctx->dma_tx_end].end = 1;
   } else {
     part = fs->tx_len - pos;
-    ring_idx = dma_ioat_read(fs->tx_base + pos, part, dst);
+    ring_idx = dma_ioat_read(ctx->dma_dev, fs->tx_base + pos, part, dst);
     ctx->dma_tx_ops[ctx->dma_tx_end].ring_idx = ring_idx;
     ctx->dma_tx_ops[ctx->dma_tx_end].end = 0;
     ctx->dma_tx_end = (ctx->dma_tx_end + 1) % DMABUF_SIZE;
     ctx->dma_tx_num++;
 
-    ring_idx = dma_ioat_read(fs->tx_base, len - part, (uint8_t *) dst + part);
+    ring_idx = dma_ioat_read(ctx->dma_dev, fs->tx_base, len - part, (uint8_t *) dst + part);
     ctx->dma_tx_ops[ctx->dma_tx_end].ring_idx = ring_idx;
     ctx->dma_tx_ops[ctx->dma_tx_end].end = 1;
   }
