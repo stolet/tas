@@ -74,6 +74,18 @@ static inline void *network_buf_bufoff(struct network_buf_handle *bh)
   return mb->buf_addr + mb->data_off;
 }
 
+static inline void *network_buf_phys(struct network_buf_handle *bh)
+{
+  struct rte_mbuf *mb = (struct rte_mbuf *) bh;
+  return (void *) mb->buf_iova;
+}
+
+static inline void *network_buf_physoff(struct network_buf_handle *bh)
+{
+  struct rte_mbuf *mb = (struct rte_mbuf *) bh;
+  return (void *) mb->buf_iova + mb->data_off;
+}
+
 static inline void network_buf_setoff(struct network_buf_handle *bh,
     uint16_t off)
 {
@@ -86,7 +98,6 @@ static inline void network_buf_setlen(struct network_buf_handle *bh,
   struct rte_mbuf *mb = (struct rte_mbuf *) bh;
   mb->pkt_len = mb->data_len = len;
 }
-
 
 static inline int network_poll(struct network_thread *t, unsigned num,
     struct network_buf_handle **bhs)

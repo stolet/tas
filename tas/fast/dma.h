@@ -60,8 +60,8 @@ static inline int dma_ioat_read(uint16_t dma_dev, uintptr_t addr, size_t len, vo
   int ret;
   assert(addr + len >= addr && addr + len <= config.shm_len);
 
-  ret = rte_dma_copy(dma_dev, 0, rte_mem_virt2iova(tas_shm + addr),
-      rte_mem_virt2iova(buf), len, 0);
+  ret = rte_dma_copy(dma_dev, 0, (rte_iova_t) tas_shm_phys + addr,
+      (rte_iova_t) buf, len, 0);
   assert(ret >= 0);
 
 #ifdef FLEXNIC_TRACE_DMA

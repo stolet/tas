@@ -77,9 +77,6 @@ static inline void tx_send(struct dataplane_context *ctx,
 
 static void arx_cache_flush(struct dataplane_context *ctx, uint64_t tsc) __attribute__((noinline));
 
-#define DMA_SKIP_ROUNDS 10
-static uint32_t dma_rounds = 0;
-
 int dataplane_init(void)
 {
   if (FLEXNIC_INTERNAL_MEM_SIZE < sizeof(struct flextcp_pl_mem)) {
@@ -148,8 +145,6 @@ void dataplane_context_destroy(struct dataplane_context *ctx)
 {
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 void dataplane_loop(struct dataplane_context *ctx)
 {
   struct notify_blockstate nbs;
@@ -167,7 +162,6 @@ void dataplane_loop(struct dataplane_context *ctx)
     if (!was_idle)
       ctx->loadmon_cyc_busy += cyc - prev_cyc;
 
-
     ts = tas_qman_timestamp(cyc);
 
     STATS_TS(start);
@@ -184,18 +178,6 @@ void dataplane_loop(struct dataplane_context *ctx)
 
     STATS_TSADD(ctx, cyc_rx, rx - start);
     n += poll_qman(ctx, ts);
-
-    /* Issue batch of async DMA commands enqueued to the DMA engine
-     * in fast_flows_qman to copy the payload for each used handle
-     */
-    if (config.fp_tx_dma)
-    {
-      if ((dma_rounds % DMA_SKIP_ROUNDS) == 0)
-      {
-        assert(rte_dma_submit(ctx->dma_dev, 0) == 0);
-      }
-      dma_rounds++;
-    }
 
     STATS_TS(qm);
     STATS_TSADD(ctx, cyc_qm, qm - rx);
@@ -220,7 +202,6 @@ void dataplane_loop(struct dataplane_context *ctx)
     }
   }
 }
-#pragma GCC diagnostic pop
 
 static void dataplane_block(struct dataplane_context *ctx, uint32_t ts)
 {
@@ -463,6 +444,8 @@ static unsigned poll_kernel(struct dataplane_context *ctx, uint32_t ts)
   return total;
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 static unsigned poll_qman(struct dataplane_context *ctx, uint32_t ts)
 {
   unsigned q_ids[BATCH_SIZE];
@@ -523,11 +506,19 @@ static unsigned poll_qman(struct dataplane_context *ctx, uint32_t ts)
      off++;
   }
 
+  /* Issue batch of async DMA commands enqueued to the DMA engine
+   * in fast_flows_qman to copy the payload for each used handle
+   */
+  if (config.fp_tx_dma && off > 0)
+    rte_dma_submit(ctx->dma_dev, 0);
+
   /* apply buffer reservations */
   bufcache_alloc(ctx, off);
 
   return ret;
 }
+#pragma GCC diagnostic pop
+
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"

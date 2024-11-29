@@ -42,6 +42,7 @@
 #include <tas.h>
 #include <tas_memif.h>
 
+uintptr_t tas_shm_phys = NULL;
 void *tas_shm = NULL;
 struct flextcp_pl_mem *fp_state = NULL;
 struct flexnic_info *tas_info = NULL;
@@ -72,7 +73,6 @@ int shm_preinit(void)
     fprintf(stderr, "mapping flexnic dma memory failed\n");
     return -1;
   }
-
   /* create shm for internal memory */
   if (config.fp_hugepages) {
     fp_state = util_create_shmsiszed_huge(FLEXNIC_NAME_INTERNAL_MEM,
@@ -112,6 +112,9 @@ int shm_init(unsigned num)
 
   if (config.fp_hugepages)
     tas_info->flags |= FLEXNIC_FLAG_HUGEPAGES;
+
+  /* Get physical address for TAS shm region */
+  tas_shm_phys = (uintptr_t) rte_mem_virt2iova(tas_shm);
 
   return 0;
 }

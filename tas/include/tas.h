@@ -35,6 +35,7 @@
 
 extern struct configuration config;
 
+extern uintptr_t tas_shm_phys;
 extern void *tas_shm;
 extern struct flextcp_pl_mem *fp_state;
 extern struct flexnic_info *tas_info;
@@ -73,7 +74,7 @@ int notify_canblock(struct notify_blockstate *nbs, int had_data, uint64_t tsc);
 void notify_canblock_reset(struct notify_blockstate *nbs);
 
 /* should become config options */
-#define FLEXNIC_INTERNAL_MEM_SIZE (1024 * 1024 * 32)
+#define FLEXNIC_INTERNAL_MEM_SIZE (1024 * 1024 * 1024)
 #define FLEXNIC_NUM_QMQUEUES (128 * 1024)
 
 #endif /* ndef TAS_H_ */

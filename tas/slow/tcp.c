@@ -38,7 +38,7 @@
 #include <utils_rng.h>
 #include "internal.h"
 
-#define TCP_MSS 1412
+#define TCP_MSS 8912
 #define TCP_HTSIZE 4096
 
 #define PORT_MAX ((1u << 16) - 1)
