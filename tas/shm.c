@@ -42,7 +42,7 @@
 #include <tas.h>
 #include <tas_memif.h>
 
-uintptr_t tas_shm_phys = NULL;
+uintptr_t tas_shm_phys = (uintptr_t) NULL;
 void *tas_shm = NULL;
 struct flextcp_pl_mem *fp_state = NULL;
 struct flexnic_info *tas_info = NULL;
