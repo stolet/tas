@@ -526,6 +526,17 @@ ssize_t tas_pwrite(int sockfd, const void *buf, size_t len, off_t offset)
 
 ssize_t tas_sendfile(int sockfd, int in_fd, off_t *offset, size_t len)
 {
+  struct socket *s;
+  if (flextcp_fd_slookup(sockfd, &s) != 0) {
+    errno = EBADF;
+    return -1;
+  }
+
+  if (flextcp_fd_slookup(in_fd, &s) != 0) {
+    errno = EBADF;
+    return -1;
+  }
+
   assert(!"NYI");
   errno = ENOTSUP;
   return -1;
