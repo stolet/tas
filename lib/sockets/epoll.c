@@ -38,7 +38,7 @@
 #define LINUX_POLL_DELAY 10
 
 #define EPOLL_DEBUG(x...) do {} while (0)
-//#define EPOLL_DEBUG(x...) fprintf(stderr, x)
+// #define EPOLL_DEBUG(x...) fprintf(stderr, x)
 
 static inline void es_add_inactive(struct epoll_socket *es);
 static inline void es_activate(struct epoll_socket *es);
@@ -90,6 +90,7 @@ int tas_epoll_ctl(int epfd, int op, int fd, struct epoll_event *event)
   uint32_t em;
   int linux_fd = 0;
 
+  struct flextcp_context *ctx = flextcp_sockctx_get();
   EPOLL_DEBUG("flextcp_epoll_ctl(%d, %d, %d, {events=%x})\n", epfd, op,
       fd, (event != NULL ? event->events : -1));
 
@@ -166,6 +167,16 @@ int tas_epoll_ctl(int epfd, int op, int fd, struct epoll_event *event)
       es->so_next = s->eps;
       s->eps->so_prev = es;
       s->eps = es;
+    }
+
+    /* Move this fd to the context that added it */
+    if (s->type == SOCK_LISTENER)
+    {
+      flextcp_listen_move(ctx, &s->data.listener.l);
+    }
+    else if (s->type == SOCK_CONNECTION)
+    {
+      flextcp_connection_move(ctx, &s->data.connection.c);
     }
 
     /* add to inactive queue */

@@ -395,6 +395,7 @@ static void uxsocket_accept(void)
   }
 
   app->fd = cfd;
+  app->forked_ctxs = NULL;
   app->contexts = NULL;
   app->need_reg_ctx = NULL;
   app->closed = false;
@@ -432,6 +433,7 @@ static void uxsocket_error(struct application *app)
 static void uxsocket_receive(struct application *app)
 {
   ssize_t rx;
+  struct forked_context *f_ctx;
   struct app_context *ctx;
   struct packetmem_handle *pm_in, *pm_out;
   uintptr_t off_in, off_out, off_rxq, off_txq;
@@ -551,6 +553,14 @@ static void uxsocket_receive(struct application *app)
   ctx->next = app->contexts;
   MEM_BARRIER();
   app->contexts = ctx;
+
+  if (app->forked_ctxs == NULL)
+  {
+    f_ctx = malloc(sizeof(struct forked_context));
+    f_ctx->ctx = ctx;
+    f_ctx->next = NULL;
+    app->forked_ctxs = f_ctx;
+  }
 
   /* initialize response */
   app->resp->app_out_off = off_in;

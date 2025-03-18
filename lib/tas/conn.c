@@ -394,6 +394,35 @@ uint32_t flextcp_conn_txbuf_available(struct flextcp_connection *conn)
   return conn_tx_allocbytes(conn);
 }
 
+int flextcp_listen_move(struct flextcp_context *ctx,
+        struct flextcp_listener *l)
+{
+  uint32_t pos = ctx->kin_head;
+  struct kernel_appout *kin = ctx->kin_base;
+
+  kin += pos;
+
+  if (kin->type != KERNEL_APPOUT_INVALID) {
+    fprintf(stderr, "flextcp_listen_move: no queue space\n");
+    return -1;
+  }
+
+  kin->data.listen_move.local_port = l->local_port;
+  kin->data.listen_move.db_id = ctx->db_id;
+  kin->data.listen_move.opaque = OPAQUE(l);
+  MEM_BARRIER();
+  kin->type = KERNEL_APPOUT_LISTEN_MOVE;
+  flextcp_kernel_kick();
+
+  pos = pos + 1;
+  if (pos >= ctx->kin_len) {
+    pos = 0;
+  }
+  ctx->kin_head = pos;
+
+  return 0;
+}
+
 int flextcp_connection_move(struct flextcp_context *ctx,
         struct flextcp_connection *conn)
 {

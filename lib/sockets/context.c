@@ -28,6 +28,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <pthread.h>
+#include <limits.h>
 
 #include <utils.h>
 #include <tas_sockets.h>
@@ -50,6 +51,8 @@ static inline void ev_conn_sendbuf(struct flextcp_context *ctx,
     struct flextcp_event *ev);
 static inline void ev_conn_moved(struct flextcp_context *ctx,
     struct flextcp_event *ev);
+static inline void ev_listen_moved(struct flextcp_context *ctx,
+    struct flextcp_event *ev);
 static inline void ev_conn_rxclosed(struct flextcp_context *ctx,
     struct flextcp_event *ev);
 static inline void ev_conn_txclosed(struct flextcp_context *ctx,
@@ -59,6 +62,11 @@ static inline void ev_conn_closed(struct flextcp_context *ctx,
 
 static __thread struct sockets_context *local_context;
 static pthread_mutex_t context_init_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void flextcp_local_context_clear(void)
+{
+  local_context = NULL;
+}
 
 struct sockets_context *flextcp_sockctx_getfull(void)
 {
@@ -132,6 +140,10 @@ int flextcp_sockctx_poll(struct flextcp_context *ctx)
         ev_conn_moved(ctx, &evs[i]);
         break;
 
+      case FLEXTCP_EV_LISTEN_MOVED:
+        ev_listen_moved(ctx, &evs[i]);
+        break;
+
       case FLEXTCP_EV_CONN_RXCLOSED:
         ev_conn_rxclosed(ctx, &evs[i]);
         break;
@@ -192,6 +204,32 @@ static inline void ev_listen_open(struct flextcp_context *ctx,
 static inline void ev_listen_newconn(struct flextcp_context *ctx,
     struct flextcp_event *ev)
 {
+  struct flextcp_connection *c;
+  struct socket *s, *sl;
+
+  c = ev->ev.listen_newconn.conn;
+  s = (struct socket *)
+    ((uint8_t *) c - offsetof(struct socket, data.connection.c));
+
+  if (s->type != SOCK_CONNECTION)
+    return;
+
+  sl = s->data.connection.listener;
+  assert(sl != NULL);
+
+  socket_lock(sl);
+  socket_lock(s);
+
+  /** Return so we don't duplicate move */
+  if (s->data.connection.accepted == 1)
+  {
+    socket_unlock(s);
+    socket_unlock(sl);
+    return;
+  }
+
+  socket_unlock(s);
+  socket_unlock(sl);
 }
 
 static inline void ev_listen_accept(struct flextcp_context *ctx,
@@ -210,6 +248,15 @@ static inline void ev_listen_accept(struct flextcp_context *ctx,
 
   socket_lock(sl);
   socket_lock(s);
+
+  /** Return so we don't duplicate connection acceptance */
+  if (s->data.connection.accepted == 1)
+  {
+    socket_unlock(s);
+    socket_unlock(sl);
+    return;
+  }
+
   assert(s->data.connection.status == SOC_CONNECTING);
   flextcp_epoll_set(sl, EPOLLIN);
 
@@ -348,6 +395,26 @@ static inline void ev_conn_moved(struct flextcp_context *ctx,
   s->data.connection.move_status = ev->ev.conn_moved.status;
 
   socket_unlock(s);
+}
+
+static inline void ev_listen_moved(struct flextcp_context *ctx,
+  struct flextcp_event *ev)
+{
+struct flextcp_listener *l;
+struct socket *s;
+
+l = ev->ev.listen_moved.l;
+s = (struct socket *)
+  ((uint8_t *) l - offsetof(struct socket, data.listener.l));
+
+socket_lock(s);
+
+assert(s->type == SOCK_LISTENER);
+assert(s->data.listener.status == SOL_OPEN);
+
+s->data.listener.move_status = ev->ev.listen_moved.status;
+
+socket_unlock(s);
 }
 
 static inline void ev_conn_rxclosed(struct flextcp_context *ctx,

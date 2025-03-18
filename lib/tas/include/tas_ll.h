@@ -164,6 +164,8 @@ enum flextcp_event_type {
   FLEXTCP_EV_CONN_TXCLOSED,
   /** Connection moved to new context */
   FLEXTCP_EV_CONN_MOVED,
+  /** Listener moved to new context */
+  FLEXTCP_EV_LISTEN_MOVED,
 };
 
 /** Events that can occur on flextcp contexts. */
@@ -179,6 +181,7 @@ struct flextcp_event {
     struct {
       uint16_t remote_port;
       uint32_t remote_ip;
+      struct flextcp_connection *conn;
       struct flextcp_listener *listener;
     } listen_newconn;
     /** For #FLEXTCP_EV_LISTEN_ACCEPT */
@@ -215,6 +218,11 @@ struct flextcp_event {
       int16_t status;
       struct flextcp_connection *conn;
     } conn_moved;
+    /** For #FLEXTCP_EV_LISTEN_MOVED */
+    struct {
+      int16_t status;
+      struct flextcp_listener *l;
+    } listen_moved;
     /** For #FLEXTCP_EV_CONN_CLOSED */
     struct {
       int16_t status;
@@ -332,6 +340,16 @@ int flextcp_connection_tx_possible(struct flextcp_context *ctx,
 /** Move connection to specfied context */
 int flextcp_connection_move(struct flextcp_context *ctx,
         struct flextcp_connection *conn);
+
+/** Move listener to specfied context */
+int flextcp_listen_move(struct flextcp_context *ctx,
+  struct flextcp_listener *l);
+
+/** Add context of child process that got forkedd to listeners
+ *  of this application
+ */
+int flextcp_kernel_fork(struct flextcp_context *ctx,
+  uint64_t pid, uint64_t parent_pid);
 
 /** @} */
 

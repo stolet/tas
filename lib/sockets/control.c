@@ -33,6 +33,7 @@
 #include <limits.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <unistd.h>
 
 #include <utils.h>
 #include <tas_sockets.h>
@@ -318,6 +319,7 @@ int tas_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
   s->data.connection.rx_len_1 = 0;
   s->data.connection.rx_len_2 = 0;
   s->data.connection.ctx = ctx;
+  s->data.connection.accepted = 1;
 
   /* check whether the socket is blocking */
   if ((s->flags & SOF_NONBLOCK) == SOF_NONBLOCK) {
@@ -372,6 +374,7 @@ static int enqueue_accept(struct flextcp_context *ctx, struct socket *s)
     ns->data.connection.rx_len_1 = 0;
     ns->data.connection.rx_len_2 = 0;
     ns->data.connection.ctx = ctx;
+    ns->data.connection.accepted = 0;
 
     bl = l->backlog + ((l->backlog_next + l->backlog_num) % l->backlog_len);
     bl->s = ns;
@@ -456,6 +459,7 @@ int tas_listen(int sockfd, int backlog)
   l->backlog_next = 0;
   l->backlog_num = 0;
   l->status = SOL_OPENING;
+  l->ctx = ctx;
 
   /* wait for listen to complete */
   block = 0;
@@ -999,4 +1003,21 @@ int tas_sock_move(struct socket *s)
   }
 
   return ret;
+}
+
+pid_t tas_fork(pid_t pid, pid_t parent_pid)
+{
+  struct flextcp_context *ctx;
+
+  /** Thread local variables get copied when a process is forked.
+   *  Clear the current context and then get a new context for
+   *  the forked child process.
+   */
+  flextcp_local_context_clear();
+  flextcp_sockctx_getfull();
+
+  ctx = flextcp_sockctx_get();
+
+  flextcp_kernel_fork(ctx, pid, parent_pid);
+  return pid;
 }

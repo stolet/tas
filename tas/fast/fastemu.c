@@ -392,7 +392,7 @@ static unsigned poll_kernel(struct dataplane_context *ctx, uint32_t ts)
 
   for (k = 0; k < max;) {
     ret = fast_kernel_poll(ctx, handles[k], ts);
- 
+
     if (ret == 0)
       k++;
     else if (ret < 0)

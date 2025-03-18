@@ -82,6 +82,8 @@ struct socket_conn {
   size_t rx_len_2;
   struct flextcp_context *ctx;
   int move_status;
+
+  int accepted;
 };
 
 struct socket_backlog {
@@ -96,6 +98,9 @@ struct socket_listen {
   int backlog_next;
   int backlog_num;
   uint8_t status;
+
+  struct flextcp_context *ctx;
+  int move_status;
 };
 
 struct socket {
@@ -171,6 +176,7 @@ void flextcp_fd_srelease(int fd, struct socket *s);
 void flextcp_fd_erelease(int fd, struct epoll *ep);
 void flextcp_fd_close(int fd);
 
+void flextcp_local_context_clear(void);
 struct sockets_context *flextcp_sockctx_getfull(void);
 struct flextcp_context *flextcp_sockctx_get(void);
 int flextcp_sockctx_poll(struct flextcp_context *ctx);
@@ -186,6 +192,7 @@ void flextcp_epoll_destroy(struct epoll *ep);
 
 int tas_sock_close(struct socket *sock);
 int tas_sock_move(struct socket *s);
+pid_t tas_fork(pid_t pid, pid_t parent_pid);
 
 int tas_libc_epoll_create1(int flags);
 int tas_libc_epoll_ctl(int epfd, int op, int fd,

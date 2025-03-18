@@ -37,6 +37,8 @@
 #include <utils.h>
 #include <tas_sockets.h>
 
+#include "internal.h"
+
 static inline void ensure_init(void);
 
 /* Function pointers to the libc functions */
@@ -87,6 +89,7 @@ static ssize_t (*libc_pwrite)(int sockfd, const void *buf, size_t count,
 static ssize_t (*libc_sendfile)(int sockfd, int in_fd, off_t *offset,
     size_t len) = NULL;
 static long (*libc_syscall)(long num, ...) = NULL;
+static pid_t (*libc_fork)(void) = NULL;
 
 int socket(int domain, int type, int protocol)
 {
@@ -145,6 +148,7 @@ int listen(int sockfd, int backlog)
 {
   int ret;
   ensure_init();
+  backlog = 512;
   if ((ret = tas_listen(sockfd, backlog)) == -1 && errno == EBADF) {
     return libc_listen(sockfd, backlog);
   }
@@ -544,6 +548,16 @@ int dup3(int oldfd, int newfd, int flags)
   return tas_dup3(oldfd, newfd, flags);
 }
 
+pid_t fork(void)
+{
+  pid_t parent_pid = getpid();
+  pid_t pid = libc_fork();
+  if (pid != 0)
+    tas_fork(pid, parent_pid);
+
+  return pid;
+}
+
 /* I really apologize to anyone reading this particular piece of code.
  * So apparently there is code out there that calls some socket calls directly
  * with syscall (nodejs being one example). In this case these get past our
@@ -752,6 +766,7 @@ static void init(void)
   libc_pwrite = bind_symbol("pwrite");
   libc_sendfile = bind_symbol("sendfile");
   libc_syscall = bind_symbol("syscall");
+  libc_fork = bind_symbol("fork");
 
   if (tas_init() != 0) {
     abort();

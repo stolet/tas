@@ -258,6 +258,32 @@ int flextcp_kernel_newctx(struct flextcp_context *ctx)
   return 0;
 }
 
+int flextcp_kernel_fork(struct flextcp_context *ctx, uint64_t pid, uint64_t parent_pid)
+{
+  uint32_t pos = ctx->kin_head;
+  struct kernel_appout *kin = ctx->kin_base;
+
+  kin += pos;
+
+  if (kin->type != KERNEL_APPOUT_INVALID) {
+    return -1;
+  }
+
+  kin->data.fork.pid = pid;
+  kin->data.fork.parent_pid = parent_pid;
+  MEM_BARRIER();
+  kin->type = KERNEL_APPOUT_FORK;
+  flextcp_kernel_kick();
+
+  pos = pos + 1;
+  if (pos >= ctx->kin_len) {
+    pos = 0;
+  }
+  ctx->kin_head = pos;
+
+  return 0;
+}
+
 int flextcp_kernel_reqscale(struct flextcp_context *ctx, uint32_t cores)
 {
   uint32_t pos = ctx->kin_head;

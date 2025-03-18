@@ -55,8 +55,8 @@
 
 #define CONN_DEBUG(c, f, x...) do { } while (0)
 #define CONN_DEBUG0(c, f) do { } while (0)
-/*#define CONN_DEBUG(c, f, x...) fprintf(stderr, "conn(%p): " f, c, x)
-#define CONN_DEBUG0(c, f, x...) fprintf(stderr, "conn(%p): " f, c)*/
+// #define CONN_DEBUG(c, f, x...) fprintf(stderr, "conn(%p): " f, c, x)
+// #define CONN_DEBUG0(c, f, x...) fprintf(stderr, "conn(%p): " f, c)
 
 struct listen_multi {
   size_t num;
@@ -217,6 +217,8 @@ int tcp_listen(struct app_context *ctx, uint64_t opaque, uint16_t local_port,
   struct backlog_slot *bls;
   struct listen_multi *lm = NULL, *lm_new = NULL;
   uint8_t type;
+
+  backlog = 512;
 
   /* make sure port is unused */
   type = ports[local_port] & PORT_TYPE_MASK;

@@ -69,6 +69,7 @@ struct application {
   size_t resp_sz;
   struct kernel_uxsock_response *resp;
 
+  struct forked_context *forked_ctxs;
   struct app_context *contexts;
   struct application *next;
   struct app_context *need_reg_ctx;

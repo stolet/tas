@@ -551,6 +551,15 @@ struct connection {
   uint16_t flow_group;
 };
 
+/** App context element in listener list. When a
+ *  a process gets forked it gets added to the
+ *  listener list of forked contexts.
+ */
+struct forked_context {
+    struct app_context *ctx;
+    struct forked_context *next;
+};
+
 /** TCP listener  */
 struct listener {
   /**
@@ -559,7 +568,7 @@ struct listener {
    */
     /** Application-specified opaque value for listener. */
     uint64_t opaque;
-    /** Application context this listener is assigned to. */
+    /** Application contexts this listener is assigned to. */
     struct app_context *ctx;
     /** Link list pointer for application listeners. */
     struct listener *app_next;
