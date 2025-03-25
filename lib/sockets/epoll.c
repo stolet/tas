@@ -174,10 +174,6 @@ int tas_epoll_ctl(int epfd, int op, int fd, struct epoll_event *event)
     {
       flextcp_listen_move(ctx, &s->data.listener.l);
     }
-    else if (s->type == SOCK_CONNECTION)
-    {
-      flextcp_connection_move(ctx, &s->data.connection.c);
-    }
 
     /* add to inactive queue */
     es_add_inactive(es);
