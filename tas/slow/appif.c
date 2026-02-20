@@ -197,6 +197,7 @@ static int uxsocket_init(void)
   memset(&saun, 0, sizeof(saun));
   saun.sun_family = AF_UNIX;
   memcpy(saun.sun_path, KERNEL_SOCKET_PATH, sizeof(KERNEL_SOCKET_PATH));
+  unlink(KERNEL_SOCKET_PATH);
   if (bind(fd, (struct sockaddr *) &saun, sizeof(saun))) {
     perror("uxsocket_init: bind failed");
     goto error_close;
