@@ -46,6 +46,8 @@ int flexnic_driver_connect(struct flexnic_info **p_info, void **p_mem_start)
 {
   void *m;
   volatile struct flexnic_info *fi;
+  const char *info_name = util_get_tas_shm_name_info();
+  const char *dma_name = util_get_tas_shm_name_dma_mem();
   int err_ret = -1;
 
   /* return error, if already connected */
@@ -55,7 +57,7 @@ int flexnic_driver_connect(struct flexnic_info **p_info, void **p_mem_start)
   }
 
   /* open and map flexnic info shm region */
-  if ((m = map_region(FLEXNIC_NAME_INFO, FLEXNIC_INFO_BYTES)) == NULL) {
+  if ((m = map_region(info_name, FLEXNIC_INFO_BYTES)) == NULL) {
     perror("flexnic_driver_connect: map_region info failed");
     goto error_exit;
   }
@@ -69,9 +71,9 @@ int flexnic_driver_connect(struct flexnic_info **p_info, void **p_mem_start)
 
   /* open and map dma shm region */
   if ((fi->flags & FLEXNIC_FLAG_HUGEPAGES) == FLEXNIC_FLAG_HUGEPAGES) {
-    m = map_region_huge(FLEXNIC_NAME_DMA_MEM, fi->dma_mem_size);
+    m = map_region_huge(dma_name, fi->dma_mem_size);
   } else {
-    m = map_region(FLEXNIC_NAME_DMA_MEM, fi->dma_mem_size);
+    m = map_region(dma_name, fi->dma_mem_size);
   }
   if (m == NULL) {
     perror("flexnic_driver_connect: mapping dma memory failed");
@@ -91,6 +93,7 @@ error_exit:
 int flexnic_driver_internal(void **int_mem_start)
 {
   void *m;
+  const char *internal_name = util_get_tas_shm_name_internal();
 
   if (info == NULL) {
     fprintf(stderr, "flexnic_driver_internal: driver not connected\n");
@@ -99,9 +102,9 @@ int flexnic_driver_internal(void **int_mem_start)
 
   /* open and map flexnic internal memory shm region */
   if ((info->flags & FLEXNIC_FLAG_HUGEPAGES) == FLEXNIC_FLAG_HUGEPAGES) {
-    m = map_region_huge(FLEXNIC_NAME_INTERNAL_MEM, info->internal_mem_size);
+    m = map_region_huge(internal_name, info->internal_mem_size);
   } else {
-    m = map_region(FLEXNIC_NAME_INTERNAL_MEM, info->internal_mem_size);
+    m = map_region(internal_name, info->internal_mem_size);
   }
   if (m == NULL) {
     perror("flexnic_driver_internal: map_region failed");

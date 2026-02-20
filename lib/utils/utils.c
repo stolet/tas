@@ -26,8 +26,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 #include <arpa/inet.h>
 #include <utils.h>
+#include <kernel_appif.h>
+#include <tas_memif.h>
+#include <pthread.h>
 #include <assert.h>
 #include <unistd.h>
 
@@ -78,4 +83,81 @@ void util_dump_mem(const void *mem, size_t len)
     fprintf(stderr, "%02x ", b[i]);
   }
   fprintf(stderr, "\n");
+}
+
+static struct {
+  int id;
+  char socket_path[sizeof("flexnic2147483647_os")];
+  char shm_info[sizeof("tas2147483647_info")];
+  char shm_dma_mem[sizeof("tas2147483647_memory")];
+  char shm_internal[sizeof("tas2147483647_internal")];
+} tas_names;
+static pthread_once_t tas_names_once = PTHREAD_ONCE_INIT;
+
+static void init_tas_names(void)
+{
+  const char *s;
+  char *end;
+  long id;
+
+  tas_names.id = -1;
+  snprintf(tas_names.socket_path, sizeof(tas_names.socket_path), "%s",
+      KERNEL_SOCKET_PATH);
+  snprintf(tas_names.shm_info, sizeof(tas_names.shm_info), "%s",
+      FLEXNIC_NAME_INFO);
+  snprintf(tas_names.shm_dma_mem, sizeof(tas_names.shm_dma_mem), "%s",
+      FLEXNIC_NAME_DMA_MEM);
+  snprintf(tas_names.shm_internal, sizeof(tas_names.shm_internal), "%s",
+      FLEXNIC_NAME_INTERNAL_MEM);
+
+  s = getenv("TAS_ID");
+  if (s == NULL || *s == '\0') {
+    return;
+  }
+
+  errno = 0;
+  id = strtol(s, &end, 10);
+  if (errno != 0 || *end != '\0' || id < 0 || id > INT_MAX) {
+    return;
+  }
+
+  tas_names.id = (int) id;
+  snprintf(tas_names.socket_path, sizeof(tas_names.socket_path),
+      "flexnic%d_os", tas_names.id);
+  snprintf(tas_names.shm_info, sizeof(tas_names.shm_info), "tas%d_info",
+      tas_names.id);
+  snprintf(tas_names.shm_dma_mem, sizeof(tas_names.shm_dma_mem),
+      "tas%d_memory", tas_names.id);
+  snprintf(tas_names.shm_internal, sizeof(tas_names.shm_internal),
+      "tas%d_internal", tas_names.id);
+}
+
+int util_get_tas_id(void)
+{
+  pthread_once(&tas_names_once, init_tas_names);
+  return tas_names.id;
+}
+
+const char *util_get_tas_socket_path(void)
+{
+  pthread_once(&tas_names_once, init_tas_names);
+  return tas_names.socket_path;
+}
+
+const char *util_get_tas_shm_name_info(void)
+{
+  pthread_once(&tas_names_once, init_tas_names);
+  return tas_names.shm_info;
+}
+
+const char *util_get_tas_shm_name_dma_mem(void)
+{
+  pthread_once(&tas_names_once, init_tas_names);
+  return tas_names.shm_dma_mem;
+}
+
+const char *util_get_tas_shm_name_internal(void)
+{
+  pthread_once(&tas_names_once, init_tas_names);
+  return tas_names.shm_internal;
 }

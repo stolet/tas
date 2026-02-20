@@ -63,6 +63,7 @@ int flextcp_kernel_connect(void)
   int fd, *pfd;
   uint8_t b;
   ssize_t r;
+  const char *socket_path = util_get_tas_socket_path();
   uint32_t num_fds, off, i, n;
   struct sockaddr_un saun;
   struct cmsghdr *cmsg;
@@ -70,7 +71,7 @@ int flextcp_kernel_connect(void)
   /* prepare socket address */
   memset(&saun, 0, sizeof(saun));
   saun.sun_family = AF_UNIX;
-  memcpy(saun.sun_path, KERNEL_SOCKET_PATH, sizeof(KERNEL_SOCKET_PATH));
+  snprintf(saun.sun_path, sizeof(saun.sun_path), "%s", socket_path);
 
   if ((fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0)) == -1) {
     perror("flextcp_kernel_connect: socket failed");

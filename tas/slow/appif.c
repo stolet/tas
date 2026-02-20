@@ -186,6 +186,7 @@ unsigned appif_poll(void)
 static int uxsocket_init(void)
 {
   int fd, efd, nfd;
+  const char *socket_path = util_get_tas_socket_path();
   struct sockaddr_un saun;
   struct epoll_event ev;
 
@@ -196,8 +197,8 @@ static int uxsocket_init(void)
 
   memset(&saun, 0, sizeof(saun));
   saun.sun_family = AF_UNIX;
-  memcpy(saun.sun_path, KERNEL_SOCKET_PATH, sizeof(KERNEL_SOCKET_PATH));
-  unlink(KERNEL_SOCKET_PATH);
+  snprintf(saun.sun_path, sizeof(saun.sun_path), "%s", socket_path);
+  unlink(socket_path);
   if (bind(fd, (struct sockaddr *) &saun, sizeof(saun))) {
     perror("uxsocket_init: bind failed");
     goto error_close;

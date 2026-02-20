@@ -40,6 +40,13 @@ int util_parse_mac(const char *s, uint64_t *mac);
 
 void util_dump_mem(const void *b, size_t len);
 
+/* Returns -1 when TAS_ID is unset or invalid. */
+int util_get_tas_id(void);
+const char *util_get_tas_socket_path(void);
+const char *util_get_tas_shm_name_info(void);
+const char *util_get_tas_shm_name_dma_mem(void);
+const char *util_get_tas_shm_name_internal(void);
+
 /* types for big endian integers to catch those errors with types */
 struct beui16 { uint16_t x; } __attribute__((packed));
 struct beui32 { uint32_t x; } __attribute__((packed));
