@@ -77,25 +77,32 @@ static inline void set_impl(struct qman_thread *t, uint32_t id, uint32_t rate,
 
 /** Add queue to the no limit list */
 static inline void queue_activate_nolimit(struct qman_thread *t,
-    struct queue *q, uint32_t idx);
-static inline unsigned poll_nolimit(struct qman_thread *t, uint32_t cur_ts,
-    unsigned num, unsigned *q_ids, uint16_t *q_bytes);
+    struct qman_appctx *qa, struct queue *q, uint32_t idx);
+static inline unsigned poll_nolimit(struct qman_thread *t,
+    struct qman_appctx *qa, uint32_t cur_ts, unsigned num, unsigned *q_ids,
+    uint16_t *q_bytes);
 
 /** Add queue to the skip list list */
 static inline void queue_activate_skiplist(struct qman_thread *t,
-    struct queue *q, uint32_t idx);
-static inline unsigned poll_skiplist(struct qman_thread *t, uint32_t cur_ts,
-    unsigned num, unsigned *q_ids, uint16_t *q_bytes);
+    struct qman_appctx *qa, struct queue *q, uint32_t idx);
+static inline unsigned poll_skiplist(struct qman_thread *t,
+    struct qman_appctx *qa, uint32_t cur_ts, unsigned num, unsigned *q_ids,
+    uint16_t *q_bytes);
 static inline uint8_t queue_level(struct qman_thread *t);
 
-static inline void queue_fire(struct qman_thread *t,
+static inline void queue_fire(struct qman_thread *t, struct qman_appctx *qa,
     struct queue *q, uint32_t idx, unsigned *q_id, uint16_t *q_bytes);
-static inline void queue_activate(struct qman_thread *t, struct queue *q,
-    uint32_t idx);
-static inline uint32_t timestamp(void);
-static inline int timestamp_lessthaneq(struct qman_thread *t, uint32_t a,
+static inline void queue_activate(struct qman_thread *t,
+    struct qman_appctx *qa, struct queue *q, uint32_t idx);
+static inline uint16_t queue_appctx(unsigned q_id);
+static inline uint32_t queue_new_ts(struct qman_appctx *qa, struct queue *q,
+    uint32_t bytes);
+static inline int timestamp_lessthaneq(struct qman_appctx *qa, uint32_t a,
     uint32_t b);
+static inline uint32_t timestamp(void);
 static inline int64_t rel_time(uint32_t cur_ts, uint32_t ts_in);
+static inline unsigned poll_raw(struct qman_thread *t, struct qman_appctx *qa,
+    uint32_t ts, unsigned num, unsigned *q_ids, uint16_t *q_bytes);
 
 
 int tas_qman_thread_init(struct dataplane_context *ctx)
@@ -110,14 +117,20 @@ int tas_qman_thread_init(struct dataplane_context *ctx)
     return -1;
   }
 
-  for (i = 0; i < QMAN_SKIPLIST_LEVELS; i++) {
-    t->head_idx[i] = IDXLIST_INVAL;
-  }
-  t->nolimit_head_idx = t->nolimit_tail_idx = IDXLIST_INVAL;
-  utils_rng_init(&t->rng, RNG_SEED * ctx->id + ctx->id);
+  for (i = 0; i < FLEXNIC_PL_APPCTX_NUM; i++) {
+    unsigned j;
 
-  t->ts_virtual = 0;
-  t->ts_real = timestamp();
+    for (j = 0; j < QMAN_SKIPLIST_LEVELS; j++) {
+      t->appctx[i].head_idx[j] = IDXLIST_INVAL;
+    }
+    t->appctx[i].nolimit_head_idx = IDXLIST_INVAL;
+    t->appctx[i].nolimit_tail_idx = IDXLIST_INVAL;
+    t->appctx[i].ts_virtual = 0;
+    t->appctx[i].ts_real = timestamp();
+    t->appctx[i].nolimit_first = false;
+  }
+  utils_rng_init(&t->rng, RNG_SEED * ctx->id + ctx->id);
+  t->appctx_next = ctx->id % FLEXNIC_PL_APPCTX_NUM;
 
   return 0;
 }
@@ -136,49 +149,68 @@ uint32_t tas_qman_timestamp(uint64_t cycles)
 
 uint32_t tas_qman_next_ts(struct qman_thread *t, uint32_t cur_ts)
 {
+  struct qman_appctx *qa;
+  uint32_t i, idx, ret = -1U;
+  int have_ret = 0;
   uint32_t ts = timestamp();
-  uint32_t ret_ts = t->ts_virtual + (ts - t->ts_real);
+  uint32_t ret_ts;
+  (void) cur_ts;
 
-  if(t->nolimit_head_idx != IDXLIST_INVAL) {
-    // Nolimit queue has work - immediate timeout
-    fprintf(stderr, "QMan nolimit has work\n");
-    return 0;
-  }
+  for (i = 0; i < FLEXNIC_PL_APPCTX_NUM; i++) {
+    qa = &t->appctx[i];
+    ret_ts = qa->ts_virtual + (ts - qa->ts_real);
 
-  uint32_t idx = t->head_idx[0];
-  if(idx != IDXLIST_INVAL) {
-    struct queue *q = &t->queues[idx];
-
-    if(timestamp_lessthaneq(t, q->next_ts, ret_ts)) {
-      // Fired in the past - immediate timeout
+    if(qa->nolimit_head_idx != IDXLIST_INVAL) {
       return 0;
-    } else {
-      // Timeout in the future - return difference
-      return rel_time(ret_ts, q->next_ts) / 1000;
+    }
+
+    idx = qa->head_idx[0];
+    if(idx == IDXLIST_INVAL) {
+      continue;
+    }
+
+    struct queue *q = &t->queues[idx];
+    uint32_t timeout;
+
+    if(timestamp_lessthaneq(qa, q->next_ts, ret_ts)) {
+      return 0;
+    }
+
+    timeout = rel_time(ret_ts, q->next_ts) / 1000;
+    if (!have_ret || timeout < ret) {
+      ret = timeout;
+      have_ret = 1;
     }
   }
 
-  // List empty - no timeout
-  return -1;
+  return (have_ret ? ret : -1U);
 }
 
 int tas_qman_poll(struct qman_thread *t, unsigned num, unsigned *q_ids,
     uint16_t *q_bytes)
 {
-  unsigned x, y;
+  unsigned i, x;
+  uint16_t appctx;
+  struct qman_appctx *qa;
   uint32_t ts = timestamp();
 
-  /* poll nolimit list and skiplist alternating the order between */
-  if (t->nolimit_first) {
-    x = poll_nolimit(t, ts, num, q_ids, q_bytes);
-    y = poll_skiplist(t, ts, num - x, q_ids + x, q_bytes + x);
-  } else {
-    x = poll_skiplist(t, ts, num, q_ids, q_bytes);
-    y = poll_nolimit(t, ts, num - x, q_ids + x, q_bytes + x);
+  if (num == 0) {
+    return 0;
   }
-  t->nolimit_first = !t->nolimit_first;
 
-  return x + y;
+  for (i = 0; i < FLEXNIC_PL_APPCTX_NUM; i++) {
+    appctx = (t->appctx_next + i) % FLEXNIC_PL_APPCTX_NUM;
+    qa = &t->appctx[appctx];
+
+    x = poll_raw(t, qa, ts, num, q_ids, q_bytes);
+    if (x > 0) {
+      t->appctx_next = (appctx + 1) % FLEXNIC_PL_APPCTX_NUM;
+      return x;
+    }
+  }
+
+  t->appctx_next = (t->appctx_next + 1) % FLEXNIC_PL_APPCTX_NUM;
+  return 0;
 }
 
 int tas_qman_set(struct qman_thread *t, uint32_t id, uint32_t rate, uint32_t avail,
@@ -210,6 +242,8 @@ int tas_qman_set(struct qman_thread *t, uint32_t id, uint32_t rate, uint32_t ava
 static void inline set_impl(struct qman_thread *t, uint32_t idx, uint32_t rate,
     uint32_t avail, uint16_t max_chunk, uint8_t flags)
 {
+  uint16_t appctx = queue_appctx(idx);
+  struct qman_appctx *qa = &t->appctx[appctx];
   struct queue *q = &t->queues[idx];
   int new_avail = 0;
 
@@ -233,7 +267,7 @@ static void inline set_impl(struct qman_thread *t, uint32_t idx, uint32_t rate,
 
   if (new_avail && q->avail > 0
       && ((q->flags & (FLAG_INSKIPLIST | FLAG_INNOLIMITL)) == 0)) {
-    queue_activate(t, q, idx);
+    queue_activate(t, qa, q, idx);
   }
 }
 
@@ -242,7 +276,7 @@ static void inline set_impl(struct qman_thread *t, uint32_t idx, uint32_t rate,
 
 /** Add queue to the no limit list */
 static inline void queue_activate_nolimit(struct qman_thread *t,
-    struct queue *q, uint32_t idx)
+    struct qman_appctx *qa, struct queue *q, uint32_t idx)
 {
   struct queue *q_tail;
 
@@ -252,36 +286,37 @@ static inline void queue_activate_nolimit(struct qman_thread *t,
 
   q->flags |= FLAG_INNOLIMITL;
   q->next_idxs[0] = IDXLIST_INVAL;
-  if (t->nolimit_tail_idx == IDXLIST_INVAL) {
-    t->nolimit_head_idx = t->nolimit_tail_idx = idx;
+  if (qa->nolimit_tail_idx == IDXLIST_INVAL) {
+    qa->nolimit_head_idx = qa->nolimit_tail_idx = idx;
     return;
   }
 
-  q_tail = &t->queues[t->nolimit_tail_idx];
+  q_tail = &t->queues[qa->nolimit_tail_idx];
   q_tail->next_idxs[0] = idx;
-  t->nolimit_tail_idx = idx;
+  qa->nolimit_tail_idx = idx;
 }
 
 /** Poll no-limit queues */
-static inline unsigned poll_nolimit(struct qman_thread *t, uint32_t cur_ts,
-    unsigned num, unsigned *q_ids, uint16_t *q_bytes)
+static inline unsigned poll_nolimit(struct qman_thread *t,
+    struct qman_appctx *qa, uint32_t cur_ts, unsigned num, unsigned *q_ids,
+    uint16_t *q_bytes)
 {
   unsigned cnt;
   struct queue *q;
   uint32_t idx;
 
-  for (cnt = 0; cnt < num && t->nolimit_head_idx != IDXLIST_INVAL;) {
-    idx = t->nolimit_head_idx;
+  for (cnt = 0; cnt < num && qa->nolimit_head_idx != IDXLIST_INVAL;) {
+    idx = qa->nolimit_head_idx;
     q = t->queues + idx;
 
-    t->nolimit_head_idx = q->next_idxs[0];
+    qa->nolimit_head_idx = q->next_idxs[0];
     if (q->next_idxs[0] == IDXLIST_INVAL)
-      t->nolimit_tail_idx = IDXLIST_INVAL;
+      qa->nolimit_tail_idx = IDXLIST_INVAL;
 
     q->flags &= ~FLAG_INNOLIMITL;
     dprintf("poll_nolimit: t=%p q=%p idx=%u avail=%u rate=%u flags=%x\n", t, q, idx, q->avail, q->rate, q->flags);
     if (q->avail > 0) {
-      queue_fire(t, q, idx, q_ids + cnt, q_bytes + cnt);
+      queue_fire(t, qa, q, idx, q_ids + cnt, q_bytes + cnt);
       cnt++;
     }
   }
@@ -292,15 +327,15 @@ static inline unsigned poll_nolimit(struct qman_thread *t, uint32_t cur_ts,
 /*****************************************************************************/
 /* Managing skiplist queues */
 
-static inline uint32_t queue_new_ts(struct qman_thread *t, struct queue *q,
+static inline uint32_t queue_new_ts(struct qman_appctx *qa, struct queue *q,
     uint32_t bytes)
 {
-  return t->ts_virtual + ((uint64_t) bytes * 8 * 1000000) / q->rate;
+  return qa->ts_virtual + ((uint64_t) bytes * 8 * 1000000) / q->rate;
 }
 
 /** Add queue to the skip list list */
 static inline void queue_activate_skiplist(struct qman_thread *t,
-    struct queue *q, uint32_t q_idx)
+    struct qman_appctx *qa, struct queue *q, uint32_t q_idx)
 {
   uint8_t level;
   int8_t l;
@@ -310,17 +345,17 @@ static inline void queue_activate_skiplist(struct qman_thread *t,
   assert((q->flags & (FLAG_INSKIPLIST | FLAG_INNOLIMITL)) == 0);
 
   dprintf("queue_activate_skiplist: t=%p q=%p idx=%u avail=%u rate=%u flags=%x ts_virt=%u next_ts=%u\n", t, q, q_idx, q->avail, q->rate, q->flags,
-      t->ts_virtual, q->next_ts);
+      qa->ts_virtual, q->next_ts);
 
   /* make sure queue has a reasonable next_ts:
    *  - not in the past
    *  - not more than if it just sent max_chunk at the current rate
    */
   ts = q->next_ts;
-  max_ts = queue_new_ts(t, q, q->max_chunk);
-  if (timestamp_lessthaneq(t, ts, t->ts_virtual)) {
-    ts = q->next_ts = t->ts_virtual;
-  } else if (!timestamp_lessthaneq(t, ts, max_ts)) {
+  max_ts = queue_new_ts(qa, q, q->max_chunk);
+  if (timestamp_lessthaneq(qa, ts, qa->ts_virtual)) {
+    ts = q->next_ts = qa->ts_virtual;
+  } else if (!timestamp_lessthaneq(qa, ts, max_ts)) {
     ts = q->next_ts = max_ts;
   }
   q->next_ts = ts;
@@ -328,9 +363,9 @@ static inline void queue_activate_skiplist(struct qman_thread *t,
   /* find predecessors at all levels top-down */
   pred = IDXLIST_INVAL;
   for (l = QMAN_SKIPLIST_LEVELS - 1; l >= 0; l--) {
-    idx = (pred != IDXLIST_INVAL ? pred : t->head_idx[l]);
+    idx = (pred != IDXLIST_INVAL ? pred : qa->head_idx[l]);
     while (idx != IDXLIST_INVAL &&
-        timestamp_lessthaneq(t, t->queues[idx].next_ts, ts))
+        timestamp_lessthaneq(qa, t->queues[idx].next_ts, ts))
     {
       pred = idx;
       idx = t->queues[idx].next_idxs[l];
@@ -353,8 +388,8 @@ static inline void queue_activate_skiplist(struct qman_thread *t,
         q->next_idxs[l] = t->queues[idx].next_idxs[l];
         t->queues[idx].next_idxs[l] = q_idx;
       } else {
-        q->next_idxs[l] = t->head_idx[l];
-        t->head_idx[l] = q_idx;
+        q->next_idxs[l] = qa->head_idx[l];
+        qa->head_idx[l] = q_idx;
       }
     }
   }
@@ -363,8 +398,9 @@ static inline void queue_activate_skiplist(struct qman_thread *t,
 }
 
 /** Poll skiplist queues */
-static inline unsigned poll_skiplist(struct qman_thread *t, uint32_t cur_ts,
-    unsigned num, unsigned *q_ids, uint16_t *q_bytes)
+static inline unsigned poll_skiplist(struct qman_thread *t,
+    struct qman_appctx *qa, uint32_t cur_ts, unsigned num, unsigned *q_ids,
+    uint16_t *q_bytes)
 {
   unsigned cnt;
   uint32_t idx, max_vts;
@@ -372,14 +408,14 @@ static inline unsigned poll_skiplist(struct qman_thread *t, uint32_t cur_ts,
   struct queue *q;
 
   /* maximum virtual time stamp that can be reached */
-  max_vts = t->ts_virtual + (cur_ts - t->ts_real);
+  max_vts = qa->ts_virtual + (cur_ts - qa->ts_real);
 
   for (cnt = 0; cnt < num;) {
-    idx = t->head_idx[0];
+    idx = qa->head_idx[0];
 
     /* no more queues */
     if (idx == IDXLIST_INVAL) {
-      t->ts_virtual = max_vts;
+      qa->ts_virtual = max_vts;
       break;
     }
 
@@ -387,43 +423,43 @@ static inline unsigned poll_skiplist(struct qman_thread *t, uint32_t cur_ts,
 
     /* beyond max_vts */
     dprintf("poll_skiplist: next_ts=%u vts=%u rts=%u max_vts=%u cur_ts=%u\n",
-        q->next_ts, t->ts_virtual, t->ts_real, max_vts, cur_ts);
-    if (!timestamp_lessthaneq(t, q->next_ts, max_vts)) {
-      t->ts_virtual = max_vts;
+        q->next_ts, qa->ts_virtual, qa->ts_real, max_vts, cur_ts);
+    if (!timestamp_lessthaneq(qa, q->next_ts, max_vts)) {
+      qa->ts_virtual = max_vts;
       break;
     }
 
     /* remove queue from skiplist */
-    for (l = 0; l < QMAN_SKIPLIST_LEVELS && t->head_idx[l] == idx; l++) {
-      t->head_idx[l] = q->next_idxs[l];
+    for (l = 0; l < QMAN_SKIPLIST_LEVELS && qa->head_idx[l] == idx; l++) {
+      qa->head_idx[l] = q->next_idxs[l];
     }
     assert((q->flags & FLAG_INSKIPLIST) != 0);
     q->flags &= ~FLAG_INSKIPLIST;
 
     /* advance virtual timestamp */
-    t->ts_virtual = q->next_ts;
+    qa->ts_virtual = q->next_ts;
 
     dprintf("poll_skiplist: t=%p q=%p idx=%u avail=%u rate=%u flags=%x\n", t, q, idx, q->avail, q->rate, q->flags);
 
     if (q->avail > 0) {
-      queue_fire(t, q, idx, q_ids + cnt, q_bytes + cnt);
+      queue_fire(t, qa, q, idx, q_ids + cnt, q_bytes + cnt);
       cnt++;
     }
   }
 
   /* if we reached the limit, update the virtual timestamp correctly */
   if (cnt == num) {
-    idx = t->head_idx[0];
+    idx = qa->head_idx[0];
     if (idx != IDXLIST_INVAL &&
-        timestamp_lessthaneq(t, t->queues[idx].next_ts, max_vts))
+        timestamp_lessthaneq(qa, t->queues[idx].next_ts, max_vts))
     {
-      t->ts_virtual = t->queues[idx].next_ts;
+      qa->ts_virtual = t->queues[idx].next_ts;
     } else {
-      t->ts_virtual = max_vts;
+      qa->ts_virtual = max_vts;
     }
   }
 
-  t->ts_real = cur_ts;
+  qa->ts_real = cur_ts;
   return cnt;
 }
 
@@ -436,7 +472,7 @@ static inline uint8_t queue_level(struct qman_thread *t)
 
 /*****************************************************************************/
 
-static inline void queue_fire(struct qman_thread *t,
+static inline void queue_fire(struct qman_thread *t, struct qman_appctx *qa,
     struct queue *q, uint32_t idx, unsigned *q_id, uint16_t *q_bytes)
 {
   uint32_t bytes;
@@ -448,11 +484,11 @@ static inline void queue_fire(struct qman_thread *t,
 
   dprintf("queue_fire: t=%p q=%p idx=%u gidx=%u bytes=%u avail=%u rate=%u\n", t, q, idx, idx, bytes, q->avail, q->rate);
   if (q->rate > 0) {
-    q->next_ts = queue_new_ts(t, q, bytes);
+    q->next_ts = queue_new_ts(qa, q, bytes);
   }
 
   if (q->avail > 0) {
-    queue_activate(t, q, idx);
+    queue_activate(t, qa, q, idx);
   }
 
   *q_bytes = bytes;
@@ -466,13 +502,13 @@ static inline void queue_fire(struct qman_thread *t,
 #endif
 }
 
-static inline void queue_activate(struct qman_thread *t, struct queue *q,
-    uint32_t idx)
+static inline void queue_activate(struct qman_thread *t,
+    struct qman_appctx *qa, struct queue *q, uint32_t idx)
 {
   if (q->rate == 0) {
-    queue_activate_nolimit(t, q, idx);
+    queue_activate_nolimit(t, qa, q, idx);
   } else {
-    queue_activate_skiplist(t, q, idx);
+    queue_activate_skiplist(t, qa, q, idx);
   }
 }
 
@@ -524,8 +560,41 @@ static inline int64_t rel_time(uint32_t cur_ts, uint32_t ts_in)
   }
 }
 
-static inline int timestamp_lessthaneq(struct qman_thread *t, uint32_t a,
+static inline int timestamp_lessthaneq(struct qman_appctx *qa, uint32_t a,
     uint32_t b)
 {
-  return rel_time(t->ts_virtual, a) <= rel_time(t->ts_virtual, b);
+  return rel_time(qa->ts_virtual, a) <= rel_time(qa->ts_virtual, b);
+}
+
+static inline unsigned poll_raw(struct qman_thread *t, struct qman_appctx *qa,
+    uint32_t ts, unsigned num, unsigned *q_ids, uint16_t *q_bytes)
+{
+  unsigned x, y;
+
+  /* poll nolimit list and skiplist alternating the order between */
+  if (qa->nolimit_first) {
+    x = poll_nolimit(t, qa, ts, num, q_ids, q_bytes);
+    y = poll_skiplist(t, qa, ts, num - x, q_ids + x, q_bytes + x);
+  } else {
+    x = poll_skiplist(t, qa, ts, num, q_ids, q_bytes);
+    y = poll_nolimit(t, qa, ts, num - x, q_ids + x, q_bytes + x);
+  }
+  qa->nolimit_first = !qa->nolimit_first;
+
+  return x + y;
+}
+
+static inline uint16_t queue_appctx(unsigned q_id)
+{
+  if (q_id >= FLEXNIC_PL_FLOWST_NUM) {
+    return 0;
+  }
+
+  uint16_t appctx = fp_state->flowst[q_id].db_id;
+
+  if (appctx >= FLEXNIC_PL_APPCTX_NUM) {
+    appctx %= FLEXNIC_PL_APPCTX_NUM;
+  }
+
+  return appctx;
 }

@@ -46,6 +46,15 @@ struct network_thread {
 /** Skiplist: #levels */
 #define QMAN_SKIPLIST_LEVELS 4
 
+struct qman_appctx {
+  uint32_t head_idx[QMAN_SKIPLIST_LEVELS];
+  uint32_t nolimit_head_idx;
+  uint32_t nolimit_tail_idx;
+  uint32_t ts_real;
+  uint32_t ts_virtual;
+  bool nolimit_first;
+};
+
 struct qman_thread {
   /************************************/
   /* read-only */
@@ -53,13 +62,9 @@ struct qman_thread {
 
   /************************************/
   /* modified by owner thread */
-  uint32_t head_idx[QMAN_SKIPLIST_LEVELS];
-  uint32_t nolimit_head_idx;
-  uint32_t nolimit_tail_idx;
-  uint32_t ts_real;
-  uint32_t ts_virtual;
+  struct qman_appctx appctx[FLEXNIC_PL_APPCTX_NUM];
+  uint16_t appctx_next;
   struct utils_rng rng;
-  bool nolimit_first;
 };
 
 
