@@ -218,7 +218,7 @@ int tcp_listen(struct app_context *ctx, uint64_t opaque, uint16_t local_port,
   struct listen_multi *lm = NULL, *lm_new = NULL;
   uint8_t type;
 
-  backlog = 512;
+  backlog = 2048;
 
   /* make sure port is unused */
   type = ports[local_port] & PORT_TYPE_MASK;

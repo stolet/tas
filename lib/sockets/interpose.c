@@ -148,7 +148,7 @@ int listen(int sockfd, int backlog)
 {
   int ret;
   ensure_init();
-  backlog = 512;
+  backlog = 2048;
   if ((ret = tas_listen(sockfd, backlog)) == -1 && errno == EBADF) {
     return libc_listen(sockfd, backlog);
   }

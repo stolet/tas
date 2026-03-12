@@ -296,15 +296,14 @@ static inline void queue_activate_nolimit(struct qman_thread *t,
   qa->nolimit_tail_idx = idx;
 }
 
-/** Poll no-limit queues */
-static inline unsigned poll_nolimit(struct qman_thread *t,
+static inline int poll_nolimit_debug(struct qman_thread *t,
     struct qman_appctx *qa, uint32_t cur_ts, unsigned num, unsigned *q_ids,
     uint16_t *q_bytes)
 {
   unsigned cnt;
   struct queue *q;
   uint32_t idx;
-
+  
   for (cnt = 0; cnt < num && qa->nolimit_head_idx != IDXLIST_INVAL;) {
     idx = qa->nolimit_head_idx;
     q = t->queues + idx;
@@ -320,6 +319,40 @@ static inline unsigned poll_nolimit(struct qman_thread *t,
       cnt++;
     }
   }
+  
+  return cnt;
+}
+
+/** Poll no-limit queues */
+static inline unsigned poll_nolimit(struct qman_thread *t,
+    struct qman_appctx *qa, uint32_t cur_ts, unsigned num, unsigned *q_ids,
+    uint16_t *q_bytes)
+{
+  unsigned cnt = 0;
+  // unsigned cnt;
+  // struct queue *q;
+  // uint32_t idx;
+  
+  if (qa->nolimit_head_idx == IDXLIST_INVAL)
+    return cnt;
+    
+  cnt = poll_nolimit_debug(t, qa, cur_ts, num, q_ids, q_bytes);
+  
+  // for (cnt = 0; cnt < num && qa->nolimit_head_idx != IDXLIST_INVAL;) {
+  //   idx = qa->nolimit_head_idx;
+  //   q = t->queues + idx;
+
+  //   qa->nolimit_head_idx = q->next_idxs[0];
+  //   if (q->next_idxs[0] == IDXLIST_INVAL)
+  //     qa->nolimit_tail_idx = IDXLIST_INVAL;
+
+  //   q->flags &= ~FLAG_INNOLIMITL;
+  //   dprintf("poll_nolimit: t=%p q=%p idx=%u avail=%u rate=%u flags=%x\n", t, q, idx, q->avail, q->rate, q->flags);
+  //   if (q->avail > 0) {
+  //     queue_fire(t, qa, q, idx, q_ids + cnt, q_bytes + cnt);
+  //     cnt++;
+  //   }
+  // }
 
   return cnt;
 }
