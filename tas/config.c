@@ -83,6 +83,7 @@ enum cfg_params {
   CP_BU_MAX_BUDGET,
   CP_BU_BUDGET_BOOST,
   CP_BU_USE_RATIO,
+  CP_BU_ECN_THRESH,
   CP_BU_UPDATE_FREQ,
   CP_KNI_NAME,
   CP_READY_FD,
@@ -229,6 +230,9 @@ static struct option opts[] = {
     { .name = "bu-use-ratio",
       .has_arg = required_argument,
       .val = CP_BU_USE_RATIO },
+    { .name = "bu-ecn-thresh",
+      .has_arg = required_argument,
+      .val = CP_BU_ECN_THRESH },
     { .name = "bu-update-freq",
       .has_arg = required_argument,
       .val = CP_BU_UPDATE_FREQ },
@@ -546,6 +550,13 @@ int config_parse(struct configuration *c, int argc, char *argv[])
           goto failed;
         }
         break;
+      case CP_BU_ECN_THRESH:
+        if (parse_double(optarg, &c->bu_ecn_thresh) != 0 ||
+            c->bu_ecn_thresh < 0 || c->bu_ecn_thresh > 1) {
+          fprintf(stderr, "budget ecn threshold failed parsing\n");
+          goto failed;
+        }
+        break;
       case CP_BU_UPDATE_FREQ:
         if (parse_int64(optarg, &c->bu_update_freq) != 0) {
           fprintf(stderr, "budget update frequency failed parsing\n");
@@ -656,6 +667,7 @@ static int config_defaults(struct configuration *c, char *progname)
   c->bu_max_budget = 210000;
   c->bu_update_freq = 100;
   c->bu_use_ratio = 0.9;
+  c->bu_ecn_thresh = 0.1;
   c->bu_boost = 0.94;
   c->kni_name = NULL;
   c->ready_fd = -1;
@@ -774,6 +786,8 @@ static void print_usage(struct configuration *c, char *progname)
           "[default: %"PRIu64"]\n"
       "  --bu-use-ratio              Minimum usage before cycles relocation "
           "[default: %lf]\n"
+      "  --bu-ecn-thresh             Relative budget threshold for TCP ECE (0 disables) "
+          "[default: %lf]\n"
       "  --bu-update-freq            Budget update freq "
           "[default: %"PRIu64"]\n"
       "  --bu-boost                  Boost for VM budget "
@@ -802,7 +816,8 @@ static void print_usage(struct configuration *c, char *progname)
       (double) c->cc_timely_beta / UINT32_MAX, c->cc_timely_min_rtt,
       c->cc_timely_min_rate, c->arp_to, c->arp_to_max,
       c->fp_cores_max, c->fp_poll_interval_tas, c->fp_poll_interval_app,
-      c->bu_max_budget, c->bu_use_ratio, c->bu_update_freq, c->bu_boost);
+      c->bu_max_budget, c->bu_use_ratio, c->bu_ecn_thresh,
+      c->bu_update_freq, c->bu_boost);
 }
 
 static inline int parse_int64(const char *s, uint64_t *pi)

@@ -86,11 +86,13 @@ static void flow_tx_segment_gre(struct dataplane_context *ctx,
     uint32_t seq, uint32_t ack, uint32_t rxwnd, uint16_t payload,
     uint32_t payload_pos, uint32_t ts_echo, uint32_t ts_my, uint8_t fin);
 #endif
-static void flow_tx_ack(struct dataplane_context *ctx, uint32_t seq,
+static void flow_tx_ack(struct dataplane_context *ctx,
+    struct flextcp_pl_flowst *fs, uint32_t seq,
     uint32_t ack, uint32_t rxwnd, uint32_t echots, uint32_t myts,
     struct network_buf_handle *nbh, struct tcp_timestamp_opt *ts_opt,
     int oob);
-static void flow_tx_ack_gre(struct dataplane_context *ctx, uint32_t seq,
+static void flow_tx_ack_gre(struct dataplane_context *ctx,
+    struct flextcp_pl_flowst *fs, uint32_t seq,
     uint32_t ack, uint32_t rxwnd, uint32_t echo_ts, uint32_t my_ts,
     struct network_buf_handle *nbh, struct tcp_timestamp_opt *ts_opt,
     int oob);
@@ -708,7 +710,7 @@ unlock:
 
   /* if we need to send an ack, also send packet to TX pipeline to do so */
   if (trigger_ack) {
-    flow_tx_ack(ctx, fs->tx_next_seq, fs->rx_next_seq, fs->rx_avail,
+    flow_tx_ack(ctx, fs, fs->tx_next_seq, fs->rx_next_seq, fs->rx_avail,
         fs->tx_next_ts, ts, nbh, opts->ts, 0);
   }
 
@@ -1094,7 +1096,7 @@ unlock:
 
   /* if we need to send an ack, also send packet to TX pipeline to do so */
   if (trigger_ack) {
-    flow_tx_ack_gre(ctx, fs->tx_next_seq, fs->rx_next_seq, fs->rx_avail,
+    flow_tx_ack_gre(ctx, fs, fs->tx_next_seq, fs->rx_next_seq, fs->rx_avail,
         fs->tx_next_ts, ts, nbh, opts->ts, 0);
   }
 
@@ -1367,13 +1369,24 @@ static void flow_rx_seq_write(struct flextcp_pl_flowst *fs, uint32_t seq,
 }
 #endif
 
+static inline int flow_should_signal_ece(struct dataplane_context *ctx,
+    uint16_t vm_id)
+{
+  if (config.bu_ecn_thresh <= 0) {
+    return 0;
+  }
+
+  double threshold = (double) config.bu_max_budget * config.bu_ecn_thresh;
+  return (double) ctx->budgets[vm_id].budget < threshold;
+}
+
 #if VIRTUOSO_GRE == 0
 static void flow_tx_segment(struct dataplane_context *ctx,
     struct network_buf_handle *nbh, struct flextcp_pl_flowst *fs,
     uint32_t seq, uint32_t ack, uint32_t rxwnd, uint16_t payload,
     uint32_t payload_pos, uint32_t ts_echo, uint32_t ts_my, uint8_t fin)
 {
-  uint16_t hdrs_len, optlen, fin_fl;
+  uint16_t hdrs_len, optlen, flags, fin_fl;
   struct pkt_tcp *p = network_buf_buf(nbh);
   struct tcp_timestamp_opt *opt_ts;
 
@@ -1403,12 +1416,18 @@ static void flow_tx_segment(struct dataplane_context *ctx,
   }
 
   fin_fl = (fin ? TAS_TCP_FIN : 0);
+  flags = TAS_TCP_PSH | TAS_TCP_ACK | fin_fl;
+  if ((fs->rx_base_sp & FLEXNIC_PL_FLOWST_ECN) == FLEXNIC_PL_FLOWST_ECN &&
+      flow_should_signal_ece(ctx, fs->vm_id))
+  {
+    flags |= TAS_TCP_ECE;
+  }
 
   p->tcp.src = fs->local_port;
   p->tcp.dest = fs->remote_port;
   p->tcp.seqno = t_beui32(seq);
   p->tcp.ackno = t_beui32(ack);
-  TCPH_HDRLEN_FLAGS_SET(&p->tcp, 5 + optlen / 4, TAS_TCP_PSH | TAS_TCP_ACK | fin_fl);
+  TCPH_HDRLEN_FLAGS_SET(&p->tcp, 5 + optlen / 4, flags);
   p->tcp.wnd = t_beui16(TAS_MIN(0xFFFF, rxwnd));
   p->tcp.chksum = 0;
   p->tcp.urgp = t_beui16(0);
@@ -1456,7 +1475,7 @@ static void flow_tx_segment_gre(struct dataplane_context *ctx,
     uint32_t seq, uint32_t ack, uint32_t rxwnd, uint16_t payload,
     uint32_t payload_pos, uint32_t ts_echo, uint32_t ts_my, uint8_t fin)
 {
-  uint16_t hdrs_len, optlen, fin_fl;
+  uint16_t hdrs_len, optlen, flags, fin_fl;
   struct pkt_gre *p = network_buf_buf(nbh);
   struct tcp_timestamp_opt *opt_ts;
 
@@ -1481,11 +1500,6 @@ static void flow_tx_segment_gre(struct dataplane_context *ctx,
   p->out_ip.src = fs->out_local_ip;
   p->out_ip.dest = fs->out_remote_ip;
 
-  /* mark as ECN capable if flow marked so */
-  if ((fs->rx_base_sp & FLEXNIC_PL_FLOWST_ECN) == FLEXNIC_PL_FLOWST_ECN) {
-    IPH_ECN_SET(&p->in_ip, TAS_IP_ECN_ECT0);
-  }
-
   GREH_CKSV_SET(&p->gre, 0, 1, 0, 0);
   p->gre.proto = t_beui16(GRE_PROTO_IP);
   p->gre.key = fs->tunnel_id;
@@ -1502,13 +1516,24 @@ static void flow_tx_segment_gre(struct dataplane_context *ctx,
   p->in_ip.src = fs->in_local_ip;
   p->in_ip.dest = fs->in_remote_ip;
 
+  /* mark as ECN capable if flow marked so */
+  if ((fs->rx_base_sp & FLEXNIC_PL_FLOWST_ECN) == FLEXNIC_PL_FLOWST_ECN) {
+    IPH_ECN_SET(&p->in_ip, TAS_IP_ECN_ECT0);
+  }
+
   fin_fl = (fin ? TAS_TCP_FIN : 0);
+  flags = TAS_TCP_PSH | TAS_TCP_ACK | fin_fl;
+  if ((fs->rx_base_sp & FLEXNIC_PL_FLOWST_ECN) == FLEXNIC_PL_FLOWST_ECN &&
+      flow_should_signal_ece(ctx, fs->vm_id))
+  {
+    flags |= TAS_TCP_ECE;
+  }
 
   p->tcp.src = fs->local_port;
   p->tcp.dest = fs->remote_port;
   p->tcp.seqno = t_beui32(seq);
   p->tcp.ackno = t_beui32(ack);
-  TCPH_HDRLEN_FLAGS_SET(&p->tcp, 5 + optlen / 4, TAS_TCP_PSH | TAS_TCP_ACK | fin_fl);
+  TCPH_HDRLEN_FLAGS_SET(&p->tcp, 5 + optlen / 4, flags);
   p->tcp.wnd = t_beui16(TAS_MIN(0xFFFF, rxwnd));
   p->tcp.chksum = 0;
   p->tcp.urgp = t_beui16(0);
@@ -1551,7 +1576,8 @@ static void flow_tx_segment_gre(struct dataplane_context *ctx,
 }
 #endif
 
-static void flow_tx_ack(struct dataplane_context *ctx, uint32_t seq,
+static void flow_tx_ack(struct dataplane_context *ctx,
+    struct flextcp_pl_flowst *fs, uint32_t seq,
     uint32_t ack, uint32_t rxwnd, uint32_t echots, uint32_t myts,
     struct network_buf_handle *nbh, struct tcp_timestamp_opt *ts_opt,
     int oob)
@@ -1562,6 +1588,7 @@ static void flow_tx_ack(struct dataplane_context *ctx, uint32_t seq,
   beui16_t port;
   uint16_t hdrlen;
   uint16_t ecn_flags = 0;
+  int mark_ece;
 
   p = network_buf_bufoff(nbh);
 
@@ -1584,13 +1611,19 @@ static void flow_tx_ack(struct dataplane_context *ctx, uint32_t seq,
   p->tcp.wnd = t_beui16(TAS_MIN(0xFFFF, rxwnd));
 
   hdrlen = sizeof(*p) + (TCPH_HDRLEN(&p->tcp) - 5) * 4;
+  mark_ece = ((fs->rx_base_sp & FLEXNIC_PL_FLOWST_ECN) == FLEXNIC_PL_FLOWST_ECN) &&
+      flow_should_signal_ece(ctx, fs->vm_id);
 
   /* If ECN flagged, set TCP response flag */
   if (IPH_ECN(&p->ip) == TAS_IP_ECN_CE) {
     ecn_flags = TAS_TCP_ECE;
   }
 
-  /* mark ACKs as ECN in-capable */
+  if (mark_ece) {
+    ecn_flags |= TAS_TCP_ECE;
+  }
+
+  /* ACKs stay IP-ECN neutral; feedback is carried in TCP only. */
   IPH_ECN_SET(&p->ip, TAS_IP_ECN_NONE);
 
   /* change TCP header to ACK */
@@ -1627,7 +1660,8 @@ static void flow_tx_ack(struct dataplane_context *ctx, uint32_t seq,
   tx_send(ctx, nbh, network_buf_off(nbh), hdrlen);
 }
 
-static void flow_tx_ack_gre(struct dataplane_context *ctx, uint32_t seq,
+static void flow_tx_ack_gre(struct dataplane_context *ctx,
+    struct flextcp_pl_flowst *fs, uint32_t seq,
     uint32_t ack, uint32_t rxwnd, uint32_t echots, uint32_t myts,
     struct network_buf_handle *nbh, struct tcp_timestamp_opt *ts_opt,
     int oob)
@@ -1638,6 +1672,7 @@ static void flow_tx_ack_gre(struct dataplane_context *ctx, uint32_t seq,
   beui16_t port;
   uint16_t hdrlen;
   uint16_t ecn_flags = 0;
+  int mark_ece;
 
   p = network_buf_bufoff(nbh);
 
@@ -1665,14 +1700,21 @@ static void flow_tx_ack_gre(struct dataplane_context *ctx, uint32_t seq,
   p->tcp.wnd = t_beui16(TAS_MIN(0xFFFF, rxwnd));
 
   hdrlen = sizeof(*p) + (TCPH_HDRLEN(&p->tcp) - 5) * 4;
+  mark_ece = ((fs->rx_base_sp & FLEXNIC_PL_FLOWST_ECN) == FLEXNIC_PL_FLOWST_ECN) &&
+      flow_should_signal_ece(ctx, fs->vm_id);
 
   /* If ECN flagged, set TCP response flag */
-  if (IPH_ECN(&p->out_ip) == TAS_IP_ECN_CE) {
+  if (IPH_ECN(&p->in_ip) == TAS_IP_ECN_CE) {
     ecn_flags = TAS_TCP_ECE;
   }
 
-  /* mark ACKs as ECN in-capable */
+  if (mark_ece) {
+    ecn_flags |= TAS_TCP_ECE;
+  }
+
+  /* ACKs stay IP-ECN neutral; feedback is carried in TCP only. */
   IPH_ECN_SET(&p->out_ip, TAS_IP_ECN_NONE);
+  IPH_ECN_SET(&p->in_ip, TAS_IP_ECN_NONE);
 
   /* change TCP header to ACK */
   p->tcp.seqno = t_beui32(seq);

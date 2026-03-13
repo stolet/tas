@@ -144,6 +144,8 @@ struct configuration {
   double bu_boost;
   /** VM budget used before rellocating to other VMs */
   double bu_use_ratio;
+  /** Relative budget threshold below which transmitted packets set TCP ECE; 0 disables */
+  double bu_ecn_thresh;
   /** SP: kni interface name */
   char *kni_name;
   /** Ready signal fd */
