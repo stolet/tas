@@ -464,6 +464,8 @@ static void uxsocket_accept_vm()
     close(cfd);
     return;
   }
+
+  tas_register_vm(vmid);
 }
 
 static void uxsocket_accept_app(int vm_id)
@@ -537,6 +539,9 @@ static void uxsocket_accept_app(int vm_id)
     close(cfd);
     return;
   }
+
+  tas_register_vm(vm_id);
+  tas_register_app();
   nbqueue_enq(&ux_to_poll, &app->nqe);
 }
 

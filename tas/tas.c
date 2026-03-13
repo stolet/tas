@@ -55,6 +55,9 @@ struct configuration config;
 unsigned fp_cores_max;
 volatile unsigned fp_cores_cur = 1;
 volatile unsigned fp_scale_to = 0;
+_Atomic uint16_t tas_registered_vm_count = 0;
+uint16_t tas_registered_vm_ids[FLEXNIC_PL_VMST_NUM];
+_Atomic uint16_t tas_registered_app_count = 0;
 
 static unsigned threads_launched = 0;
 int exited;
@@ -62,10 +65,42 @@ int exited;
 struct budget_statistics budget_statistics;
 struct dataplane_context **ctxs = NULL;
 struct core_load *core_loads = NULL;
+static uint8_t tas_registered_vm_slots[FLEXNIC_PL_VMST_NUM];
 
 static int start_threads(void);
 static void thread_error(void);
 static int common_thread(void *arg);
+
+void tas_register_vm(uint16_t vmid)
+{
+  uint16_t idx;
+
+  if (vmid >= FLEXNIC_PL_VMST_NUM) {
+    fprintf(stderr, "tas_register_vm: invalid vm id %u\n", vmid);
+    abort();
+  }
+
+  if (tas_registered_vm_slots[vmid] != 0) {
+    return;
+  }
+
+  idx = atomic_load_explicit(&tas_registered_vm_count, memory_order_relaxed);
+  if (idx >= FLEXNIC_PL_VMST_NUM) {
+    fprintf(stderr, "tas_register_vm: vm registration overflow (%u)\n", idx);
+    abort();
+  }
+
+  tas_registered_vm_slots[vmid] = 1;
+  tas_registered_vm_ids[idx] = vmid;
+  atomic_store_explicit(&tas_registered_vm_count, idx + 1,
+      memory_order_release);
+}
+
+void tas_register_app(void)
+{
+  atomic_fetch_add_explicit(&tas_registered_app_count, 1,
+      memory_order_release);
+}
 
 
 static void *slowpath_thread(int threads_launched)
@@ -291,8 +326,13 @@ struct budget_statistics get_budget_stats(int vmid, int ctxid)
 }
 
 void print_budget() {
-  for (int vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++)
+  uint16_t vm_count, vm_idx;
+  int vmid;
+
+  vm_count = tas_registered_vm_count_get();
+  for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
   {
+    vmid = tas_registered_vm_ids[vm_idx];
     for (int ctxid = 0; ctxid < threads_launched; ctxid++)
     {
       fprintf(stderr, "vmid=%d ctxid=%d budget=%ld\n",

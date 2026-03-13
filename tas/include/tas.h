@@ -39,6 +39,9 @@ extern void **vm_shm;
 extern int *vm_shm_fd;
 extern struct flextcp_pl_mem *fp_state;
 extern struct flexnic_info *tas_info;
+extern _Atomic uint16_t tas_registered_vm_count;
+extern uint16_t tas_registered_vm_ids[FLEXNIC_PL_VMST_NUM];
+extern _Atomic uint16_t tas_registered_app_count;
 #if RTE_VER_YEAR < 19
   extern struct ether_addr eth_addr;
 #else
@@ -72,6 +75,18 @@ void notify_app_core(int appfd, uint64_t *last_tsc);
 void notify_slowpath_core(void);
 int notify_canblock(struct notify_blockstate *nbs, int had_data, uint64_t tsc);
 void notify_canblock_reset(struct notify_blockstate *nbs);
+void tas_register_vm(uint16_t vmid);
+void tas_register_app(void);
+
+static inline uint16_t tas_registered_vm_count_get(void)
+{
+  return atomic_load_explicit(&tas_registered_vm_count, memory_order_acquire);
+}
+
+static inline uint16_t tas_registered_app_count_get(void)
+{
+  return atomic_load_explicit(&tas_registered_app_count, memory_order_acquire);
+}
 
 /* should become config options */
 #define FLEXNIC_INTERNAL_MEM_SIZE (1024 * 1024 * 32)

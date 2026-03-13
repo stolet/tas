@@ -31,6 +31,7 @@
 #include <rte_malloc.h>
 #include <rte_cycles.h>
 
+#include <tas.h>
 #include <tas_memif.h>
 #include <virtuoso.h>
 
@@ -845,6 +846,7 @@ static void arx_cache_flush(struct dataplane_context *ctx, uint64_t tsc)
 static void spend_budget(struct dataplane_context *ctx, uint64_t cycles)
 {
   int vmid;
+  uint16_t vm_count, vm_idx;
   double counter, ratio;
   uint64_t vm_cycles;
   double counters_sum = 0;
@@ -852,8 +854,20 @@ static void spend_budget(struct dataplane_context *ctx, uint64_t cycles)
   if (ctx->counters_total == 0)
     return;
 
-  for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++)
+  vm_count = tas_registered_vm_count_get();
+  if (vm_count == 0)
   {
+    for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++)
+    {
+      ctx->vm_counters[vmid] = 0;
+    }
+    ctx->counters_total = 0;
+    return;
+  }
+
+  for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
+  {
+    vmid = tas_registered_vm_ids[vm_idx];
     counter = ctx->vm_counters[vmid];
     counters_sum += counter;
     ratio = counter / ctx->counters_total;

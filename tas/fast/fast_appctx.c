@@ -27,6 +27,7 @@
 
 #include <utils.h>
 #include <utils_sync.h>
+#include <tas.h>
 #include <tas_memif.h>
 
 #include "internal.h"
@@ -101,12 +102,23 @@ void inline fast_appctx_poll_pf_all_vm(struct dataplane_context *ctx, uint32_t v
 
 void inline fast_appctx_poll_pf_all(struct dataplane_context *ctx)
 {
+  uint16_t vm_count;
   unsigned int i;
-  uint32_t vmid;
+  uint32_t vmid, vm_idx;
 
-  for  (i = 0; i < FLEXNIC_PL_VMST_NUM; i++)
+  vm_count = tas_registered_vm_count_get();
+  if (vm_count == 0) {
+    return;
+  }
+
+  if (ctx->poll_next_vm >= vm_count) {
+    ctx->poll_next_vm = 0;
+  }
+
+  for  (i = 0; i < vm_count; i++)
   {
-    vmid = (ctx->poll_next_vm + i) % (FLEXNIC_PL_VMST_NUM);
+    vm_idx = (ctx->poll_next_vm + i) % vm_count;
+    vmid = tas_registered_vm_ids[vm_idx];
     fast_appctx_poll_pf_all_vm(ctx, vmid);
   }
 }
@@ -286,15 +298,25 @@ int fast_appctx_poll_fetch_all(struct dataplane_context *ctx, uint16_t max,
     unsigned *total, void *aqes[BATCH_SIZE])
 {
   unsigned i_v;
-  uint16_t temp_k, k = 0;
-  uint32_t vmid;
+  uint16_t temp_k, k = 0, vm_count;
+  uint32_t vmid, vm_idx;
 
   int oob_n, oob_i = 0;
   int oob_vms[FLEXNIC_PL_VMST_NUM];
 
-  for (i_v = 0; i_v < FLEXNIC_PL_VMST_NUM && k < max; i_v++)
+  vm_count = tas_registered_vm_count_get();
+  if (vm_count == 0) {
+    return 0;
+  }
+
+  if (ctx->poll_next_vm >= vm_count) {
+    ctx->poll_next_vm = 0;
+  }
+
+  for (i_v = 0; i_v < vm_count && k < max; i_v++)
   {
-    vmid = ctx->poll_next_vm;
+    vm_idx = ctx->poll_next_vm;
+    vmid = tas_registered_vm_ids[vm_idx];
 
     if (ctx->budgets[vmid].budget > 0)
     {
@@ -304,7 +326,7 @@ int fast_appctx_poll_fetch_all(struct dataplane_context *ctx, uint16_t max,
       oob_vms[oob_i] = vmid;
       oob_i++;
     }
-    ctx->poll_next_vm = (ctx->poll_next_vm + 1) % (FLEXNIC_PL_VMST_NUM);
+    ctx->poll_next_vm = (ctx->poll_next_vm + 1) % vm_count;
   }
 
   temp_k = k;
@@ -317,7 +339,7 @@ int fast_appctx_poll_fetch_all(struct dataplane_context *ctx, uint16_t max,
       fast_appctx_poll_fetch_all_vm(ctx, vmid, &k, max, total, aqes, false);
     }
 
-    ctx->poll_next_vm = (ctx->poll_next_vm + 1) % (FLEXNIC_PL_VMST_NUM);
+    ctx->poll_next_vm = (ctx->poll_next_vm + 1) % vm_count;
   }
 
   return k;
@@ -498,10 +520,13 @@ void inline fast_actx_rxq_probe_all_vm(struct dataplane_context *ctx, uint32_t v
 
 void inline fast_actx_rxq_probe_all(struct dataplane_context *ctx)
 {
-  uint32_t vmid;
+  uint16_t vm_count;
+  uint32_t vmid, vm_idx;
 
-  for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++)
+  vm_count = tas_registered_vm_count_get();
+  for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
   {
+    vmid = tas_registered_vm_ids[vm_idx];
     fast_actx_rxq_probe_all_vm(ctx, vmid);
   }
 }

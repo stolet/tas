@@ -26,7 +26,7 @@
 #define VIRTUOSO_H_
 
 /** Turns on GRE tunneling */
-#define VIRTUOSO_GRE 1 
+#define VIRTUOSO_GRE 0
 #define VIRTUOSO_OVS 1
 
 #endif /* ndef VIRTUOSO_H_ */

@@ -53,7 +53,6 @@ static int exited = 0;
 struct kernel_statistics kstats;
 uint32_t cur_ts;
 int kernel_notifyfd = 0;
-int vm_weights_sum;
 static int epfd;
 
 double vm_weights[FLEXNIC_PL_VMST_NUM];
@@ -197,27 +196,41 @@ static void init_vm_weights(double *vm_weights)
   for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++)
   {
     vm_weights[vmid] = 1;
-    vm_weights_sum += 1;
   }
 }
 
 static void update_budget(int threads_launched)
 {
   int vmid, ctxid;
+  uint16_t vm_count, vm_idx;
   uint64_t cur_ts;
   int64_t incr, weighted_incr;
   int64_t total_budget;
   double delta_weight;
   double deltas_sum;
+  double weights_sum = 0;
   double deltas[threads_launched];
 
   cur_ts = util_rdtsc();
   total_budget = config.bu_boost * (cur_ts - last_bu_update_ts);
-  
-  /* Update budget */
-  for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++)
+  vm_count = tas_registered_vm_count_get();
+
+  if (vm_count == 0) {
+    last_bu_update_ts = cur_ts;
+    return;
+  }
+
+  for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
   {
-    incr = ((total_budget * vm_weights[vmid]) / vm_weights_sum) * threads_launched;
+    vmid = tas_registered_vm_ids[vm_idx];
+    weights_sum += vm_weights[vmid];
+  }
+
+  /* Update budget */
+  for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
+  {
+    vmid = tas_registered_vm_ids[vm_idx];
+    incr = ((total_budget * vm_weights[vmid]) / weights_sum) * threads_launched;
 
     deltas_sum = 0;
     for (ctxid = 0; ctxid < threads_launched; ctxid++)

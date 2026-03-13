@@ -78,13 +78,16 @@ int cc_init(void)
 
 uint32_t cc_next_ts(uint32_t cur_ts)
 {
-  int i;
+  int i, vmid;
+  uint16_t vm_count;
   assert(cur_ts >= last_ts);
   uint32_t ts = -1U;
 
-  for (i = 0; i < FLEXNIC_PL_VMST_NUM; i++)
+  vm_count = tas_registered_vm_count_get();
+  for (i = 0; i < vm_count; i++)
   {
-    cc_next_ts_vm(cur_ts, i, &ts);
+    vmid = tas_registered_vm_ids[i];
+    cc_next_ts_vm(cur_ts, vmid, &ts);
   }
 
   return (ts == -1U ? -1U : TAS_MAX(ts, config.cc_control_granularity - (cur_ts - last_ts)));
@@ -109,7 +112,8 @@ static void cc_next_ts_vm(uint32_t cur_ts, int vmid, uint32_t *ts)
 
 unsigned cc_poll(uint32_t cur_ts)
 {
-  int i, vmid; 
+  int i, vmid;
+  uint16_t vm_count;
   unsigned n = 0;
   uint32_t diff_ts;
 
@@ -117,15 +121,25 @@ unsigned cc_poll(uint32_t cur_ts)
   if (0 && diff_ts < config.cc_control_granularity)
     return 0;
 
+  vm_count = tas_registered_vm_count_get();
+  if (vm_count == 0) {
+    last_ts = cur_ts;
+    next_vm = 0;
+    return 0;
+  }
 
-  for(i = 0; i < FLEXNIC_PL_VMST_NUM && n < 128; i++)
+  if (next_vm >= vm_count) {
+    next_vm = 0;
+  }
+
+  for(i = 0; i < vm_count && n < 128; i++)
   {
-    vmid = (next_vm + i) % FLEXNIC_PL_VMST_NUM;
+    vmid = tas_registered_vm_ids[(next_vm + i) % vm_count];
     n = cc_poll_vm(vmid, n, cur_ts, diff_ts);
   }
 
   last_ts = cur_ts;
-  next_vm = (vmid + 1) % FLEXNIC_PL_VMST_NUM;
+  next_vm = (next_vm + i) % vm_count;
   return n;
 }
 
