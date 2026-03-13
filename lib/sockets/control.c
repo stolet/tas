@@ -47,13 +47,31 @@ int tas_init(void)
 {
   int groupid;
   char *groupidstr;
+  char *isolatedstr;
+  int isolated;
 
 
   groupidstr = getenv("TAS_GROUP");
+  isolatedstr = getenv("TAS_ISOLATED_VM");
+  isolated = isolatedstr != NULL && strcmp(isolatedstr, "0") != 0;
 
   if (flextcp_fd_init() != 0) {
     fprintf(stderr, "flextcp_fd_init failed\n");
     return -1;
+  }
+
+  if (isolated && groupidstr != NULL) {
+    fprintf(stderr, "tas_init: TAS_GROUP and TAS_ISOLATED_VM are mutually exclusive\n");
+    return -1;
+  }
+
+  if (isolated) {
+    if (flextcp_init_isolated() != 0) {
+      fprintf(stderr, "flextcp_init_isolated failed\n");
+      return -1;
+    }
+
+    return 0;
   }
 
   if (groupidstr == NULL)

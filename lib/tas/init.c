@@ -93,6 +93,24 @@ int flextcp_init(int groupid)
   return 0;
 }
 
+int flextcp_init_isolated(void)
+{
+  if ((flextcp_kernel_connect_isolated(&flexnic_shmfd)) < 0)
+  {
+    fprintf(stderr, "flextcp_init_isolated: connecting to kernel failed\n");
+    return -1;
+  }
+
+  if (flexnic_driver_connect(&flexnic_info, &flexnic_mem, flexnic_shmfd)
+      != 0)
+  {
+    fprintf(stderr, "flextcp_init_isolated: connecting to flexnic failed\n");
+    return -1;
+  }
+
+  return 0;
+}
+
 
 int flextcp_context_create(struct flextcp_context *ctx,
     uint8_t *presp, ssize_t *presp_sz)

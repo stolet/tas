@@ -245,6 +245,12 @@ struct flextcp_event {
 int flextcp_init(int groupid);
 
 /**
+ * Initializes global flextcp state with a dedicated VM instance for this app.
+ * @return 0 on success, < 0 on failure
+ */
+int flextcp_init_isolated(void);
+
+/**
  * Create a flextcp context.
  */
 int flextcp_context_create(struct flextcp_context *ctx,

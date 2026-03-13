@@ -36,6 +36,9 @@
 static int ksock_fd = -1;
 static int kernel_evfd = 0;
 
+static int flextcp_kernel_connect_path(int *shmfd, const char *path,
+    const char *who);
+
 void flextcp_kernel_kick(void)
 {
   static uint64_t __thread last_ts = 0;
@@ -54,6 +57,23 @@ void flextcp_kernel_kick(void)
 
 int flextcp_kernel_connect(int *shmfd, int groupid)
 {
+  char path[sizeof(((struct sockaddr_un *) 0)->sun_path)];
+
+  /* prepare socket address */
+  snprintf(path, sizeof(path), "%s_vm_%d", KERNEL_SOCKET_PATH, groupid);
+
+  return flextcp_kernel_connect_path(shmfd, path, "flextcp_kernel_connect");
+}
+
+int flextcp_kernel_connect_isolated(int *shmfd)
+{
+  return flextcp_kernel_connect_path(shmfd, KERNEL_SOCKET_PATH_APPVM,
+      "flextcp_kernel_connect_isolated");
+}
+
+static int flextcp_kernel_connect_path(int *shmfd, const char *path,
+    const char *who)
+{
   int fd, *pfd;
   uint8_t b;
   ssize_t r;
@@ -61,19 +81,17 @@ int flextcp_kernel_connect(int *shmfd, int groupid)
   struct sockaddr_un saun;
   struct cmsghdr *cmsg;
 
-  /* prepare socket address */
   memset(&saun, 0, sizeof(saun));
   saun.sun_family = AF_UNIX;
-  snprintf(saun.sun_path, sizeof(saun.sun_path),
-      "%s_vm_%d", KERNEL_SOCKET_PATH, groupid);
+  snprintf(saun.sun_path, sizeof(saun.sun_path), "%s", path);
 
   if ((fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0)) == -1) {
-    perror("flextcp_kernel_connect: socket failed");
+    perror(who);
     return -1;
   }
 
   if (connect(fd, (struct sockaddr *) &saun, sizeof(saun)) != 0) {
-    perror("flextcp_kernel_connect: connect failed");
+    perror(who);
     return -1;
   }
 
@@ -97,13 +115,13 @@ int flextcp_kernel_connect(int *shmfd, int groupid)
 
   if (flextcp_kernel_get_notifyfd(fd, &num_fds, &kernel_evfd) != 0)
   {
-    fprintf(stderr, "flextcp_kernel_connect: failed to receive notify fd.\n");
+    fprintf(stderr, "%s: failed to receive notify fd.\n", who);
     return -1;
   }
 
   if (flextcp_kernel_get_shmfd(fd, shmfd) != 0)
   {
-    fprintf(stderr, "flextcp_kernel_connect: failed to receive shm fd.\n");
+    fprintf(stderr, "%s: failed to receive shm fd.\n", who);
     return -1;
   }
 
@@ -121,7 +139,7 @@ int flextcp_kernel_connect(int *shmfd, int groupid)
 
     /* receive fd message (up to 4 fds at once) */
     if ((r = recvmsg(fd, &msg, 0)) != 1) {
-      fprintf(stderr, "flextcp_kernel_connect: recvmsg fd failed (%zd)\n", r);
+      fprintf(stderr, "%s: recvmsg fd failed (%zd)\n", who, r);
       abort();
     }
 
@@ -131,8 +149,7 @@ int flextcp_kernel_connect(int *shmfd, int groupid)
     cmsg = CMSG_FIRSTHDR(&msg);
     pfd = (int *) CMSG_DATA(cmsg);
     if (msg.msg_controllen <= 0 || cmsg->cmsg_len != CMSG_LEN(sizeof(int) * n)) {
-      fprintf(stderr, "flextcp_kernel_connect: accessing ancillary data fds "
-          "failed\n");
+      fprintf(stderr, "%s: accessing ancillary data fds failed\n", who);
       abort();
     }
 

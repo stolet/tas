@@ -33,6 +33,7 @@
 /* Unix socket for initialization with application */
 
 #define KERNEL_SOCKET_PATH "flexnic_os"
+#define KERNEL_SOCKET_PATH_APPVM KERNEL_SOCKET_PATH "_appvm"
 #define KERNEL_UXSOCK_MAXQ 8
 
 struct kernel_uxsock_request {
