@@ -48,6 +48,9 @@ extern struct kernel_statistics kstats;
 extern uint32_t cur_ts;
 extern int kernel_notifyfd;
 
+void budget_init(int threads_launched);
+void budget_update(uint64_t cur_tsc);
+
 struct nicif_completion {
   struct nbqueue_el el;
   struct nbqueue *q;

@@ -32,4 +32,7 @@
 /* Uncomment to enable per-core budget debug statistics. */
 // #define BUDGET_DEBUG_STATS
 
+/* Slowpath inner-loop cadence for opportunistic budget checks. */
+#define BUDGET_INNER_UPDATE_STRIDE 32
+
 #endif /* ndef VIRTUOSO_H_ */

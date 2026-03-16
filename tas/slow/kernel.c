@@ -32,7 +32,6 @@
 #include <string.h>
 
 #include <utils.h>
-#include <budget_debug.h>
 #include <tas.h>
 #include <virtuoso.h>
 #include "internal.h"
@@ -42,18 +41,8 @@ static void timeout_trigger(struct timeout *to, uint8_t type, void *opaque);
 static void signal_tas_ready(void);
 void flexnic_loadmon(uint32_t cur_ts);
 
-static void init_vm_weights(double *vm_weights);
-static inline void update_budget(int threads_launched, uint64_t cur_tsc);
-uint64_t get_budget_delta(int vmid, int ctxid);
-void boost_budget(int vmid, int ctxid, int64_t incr);
 struct budget_statistics get_budget_stats(int vmid, int ctxid);
 void print_budget();
-#ifdef BUDGET_DEBUG_STATS
-int64_t tas_get_budget_raw(int vmid, int ctxid);
-void tas_budget_debug_snapshot_core(int ctxid,
-    struct budget_debug_fast_snapshot *snapshot);
-static struct budget_debug_window budget_debug_window;
-#endif
 
 struct timeout_manager timeout_mgr;
 static int exited = 0;
@@ -61,11 +50,6 @@ struct kernel_statistics kstats;
 uint32_t cur_ts;
 int kernel_notifyfd = 0;
 static int epfd;
-
-double vm_weights[FLEXNIC_PL_VMST_NUM];
-uint64_t last_bu_update_ts = 0;
-static uint64_t budget_ts = 0;
-static uint64_t budget_period_tsc = 0;
 
 int slowpath_main(int threads_launched)
 {
@@ -94,7 +78,7 @@ int slowpath_main(int threads_launched)
     fprintf(stderr, "timeout_init failed\n");
     return EXIT_FAILURE;
   }
-  budget_period_tsc = config.bu_update_freq * util_timeout_tsc_per_us();
+  budget_init(threads_launched);
 
   /* initialize kni */
   if (kni_init())
@@ -143,8 +127,6 @@ int slowpath_main(int threads_launched)
     return EXIT_FAILURE;
   }
 
-  init_vm_weights(vm_weights);
-
   signal_tas_ready();
 
   notify_canblock_reset(&nbs);
@@ -155,25 +137,25 @@ int slowpath_main(int threads_launched)
     cur_ts = util_timeout_time_us();
     n += nicif_poll();
     budget_check_tsc = util_rdtsc();
-    update_budget(threads_launched, budget_check_tsc);
+    budget_update(budget_check_tsc);
     #if VIRTUOSO_GRE
       n += ovs_poll();
     #endif
     n += cc_poll(cur_ts);
     budget_check_tsc = util_rdtsc();
-    update_budget(threads_launched, budget_check_tsc);
+    budget_update(budget_check_tsc);
     n += appif_poll();
     budget_check_tsc = util_rdtsc();
-    update_budget(threads_launched, budget_check_tsc);
+    budget_update(budget_check_tsc);
     n += kni_poll();
     budget_check_tsc = util_rdtsc();
-    update_budget(threads_launched, budget_check_tsc);
+    budget_update(budget_check_tsc);
     tcp_poll();
     budget_check_tsc = util_rdtsc();
-    update_budget(threads_launched, budget_check_tsc);
+    budget_update(budget_check_tsc);
     util_timeout_poll_ts(&timeout_mgr, cur_ts);
     budget_check_tsc = util_rdtsc();
-    update_budget(threads_launched, budget_check_tsc);
+    budget_update(budget_check_tsc);
 
     if (config.fp_autoscale && cur_ts - loadmon_ts >= 10000)
     {
@@ -186,7 +168,7 @@ int slowpath_main(int threads_launched)
       slowpath_block(cur_ts);
       notify_canblock_reset(&nbs);
       budget_check_tsc = util_rdtsc();
-      update_budget(threads_launched, budget_check_tsc);
+      budget_update(budget_check_tsc);
     }
 
     if (cur_ts - last_print >= 1000000)
@@ -204,129 +186,6 @@ int slowpath_main(int threads_launched)
   }
 
   return EXIT_SUCCESS;
-}
-
-static void init_vm_weights(double *vm_weights)
-{
-  int vmid;
-
-  for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++)
-  {
-    vm_weights[vmid] = 1;
-  }
-}
-
-static inline void update_budget(int threads_launched, uint64_t cur_tsc)
-{
-  int vmid, ctxid;
-  uint16_t vm_count, vm_idx;
-  int64_t incr, weighted_incr;
-  int64_t total_budget;
-  double delta_weight;
-  double deltas_sum;
-  double weights_sum = 0;
-  double deltas[threads_launched];
-#ifdef BUDGET_DEBUG_STATS
-  uint64_t now_us;
-  struct budget_debug_fast_snapshot debug_snapshot;
-  int64_t budget_before;
-  int64_t budget_after;
-  uint64_t applied_distribution;
-#endif
-
-  if (cur_tsc - budget_ts < budget_period_tsc)
-  {
-    return;
-  }
-  budget_ts = cur_tsc;
-
-  total_budget = config.bu_boost * (cur_tsc - last_bu_update_ts);
-  vm_count = tas_registered_vm_count_get();
-#ifdef BUDGET_DEBUG_STATS
-  now_us = util_timeout_time_us();
-#endif
-
-  if (vm_count == 0) {
-#ifdef BUDGET_DEBUG_STATS
-    budget_debug_window_clear_core_distributions(&budget_debug_window,
-        threads_launched);
-    budget_debug_window_maybe_print(&budget_debug_window, stderr, now_us,
-        threads_launched, tas_registered_vm_ids, vm_count);
-#endif
-    last_bu_update_ts = cur_tsc;
-    return;
-  }
-
-#ifdef BUDGET_DEBUG_STATS
-  budget_debug_window_begin(&budget_debug_window, now_us, threads_launched);
-  for (ctxid = 0; ctxid < threads_launched; ctxid++)
-  {
-    tas_budget_debug_snapshot_core(ctxid, &debug_snapshot);
-    budget_debug_record_core_interval(&budget_debug_window, ctxid,
-        &debug_snapshot, tas_registered_vm_ids, vm_count,
-        config.bu_max_budget, cur_tsc - last_bu_update_ts);
-  }
-#endif
-
-  for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
-  {
-    vmid = tas_registered_vm_ids[vm_idx];
-    weights_sum += vm_weights[vmid];
-  }
-
-  /* Update budget */
-  for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
-  {
-    vmid = tas_registered_vm_ids[vm_idx];
-    incr = ((total_budget * vm_weights[vmid]) / weights_sum) * threads_launched;
-
-    deltas_sum = 0;
-    for (ctxid = 0; ctxid < threads_launched; ctxid++)
-    {
-      deltas[ctxid] = get_budget_delta(vmid, ctxid);
-      deltas_sum += deltas[ctxid];
-    }
-
-    for (ctxid = 0; ctxid < threads_launched; ctxid++)
-    {
-      if (deltas_sum == 0) {
-        delta_weight = 1.0 / threads_launched;
-      } else {
-        delta_weight = deltas[ctxid] / deltas_sum;
-      }
-  
-      weighted_incr = incr * delta_weight;
-      assert(weighted_incr >= 0);
-      assert(delta_weight >= 0 && delta_weight <= 1);
-#ifdef BUDGET_DEBUG_STATS
-      budget_before = tas_get_budget_raw(vmid, ctxid);
-#endif
-      boost_budget(vmid, ctxid, weighted_incr);
-#ifdef BUDGET_DEBUG_STATS
-      budget_after = tas_get_budget_raw(vmid, ctxid);
-      if (budget_after > budget_before) {
-        applied_distribution = (uint64_t) (budget_after - budget_before);
-      } else {
-        applied_distribution = 0;
-      }
-      budget_debug_record_vm_distribution(&budget_debug_window, ctxid, vmid,
-          budget_before, budget_after, applied_distribution,
-          config.bu_max_budget);
-#endif
-    }
-  }
-
-#ifdef BUDGET_DEBUG_STATS
-  for (ctxid = 0; ctxid < threads_launched; ctxid++)
-  {
-    budget_debug_publish_core_distribution(&budget_debug_window, ctxid);
-  }
-
-  budget_debug_window_maybe_print(&budget_debug_window, stderr, now_us,
-      threads_launched, tas_registered_vm_ids, vm_count);
-#endif
-
-  last_bu_update_ts = cur_tsc;
 }
 
 static void slowpath_block(uint32_t cur_ts)

@@ -28,6 +28,7 @@
 #include <utils.h>
 
 #include <tas.h>
+#include <virtuoso.h>
 #include "internal.h"
 #include "appif.h"
 
@@ -159,6 +160,11 @@ static unsigned cc_poll_vm(int vmid, unsigned n,
   for (; n < 128 && (m == 0 || c != c_first);
       c = (c->cc_next != NULL ? c->cc_next : cc_conns[vmid]), n++, m++)
   {
+    if (UNLIKELY((m & (BUDGET_INNER_UPDATE_STRIDE - 1)) ==
+        (BUDGET_INNER_UPDATE_STRIDE - 1))) {
+      budget_update(util_rdtsc());
+    }
+
     if (c->status != CONN_OPEN)
     {
       continue;
