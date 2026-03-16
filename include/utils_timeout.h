@@ -79,6 +79,11 @@ int util_timeout_init(struct timeout_manager *mgr,
 uint32_t util_timeout_time_us(void);
 
 /**
+ * Calibrated TSC cycles per microsecond.
+ */
+uint64_t util_timeout_tsc_per_us(void);
+
+/**
  * Process timers.
  */
 void util_timeout_poll(struct timeout_manager *mgr);

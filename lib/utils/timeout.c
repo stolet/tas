@@ -76,6 +76,13 @@ uint32_t util_timeout_time_us(void)
   return timestamp_us_long();
 }
 
+uint64_t util_timeout_tsc_per_us(void)
+{
+  if (tsc_per_us == 0)
+    calibrate_tsc();
+  return tsc_per_us;
+}
+
 void util_timeout_poll(struct timeout_manager *mgr)
 {
   util_timeout_poll_ts(mgr, timestamp_us());

@@ -43,7 +43,7 @@ static void signal_tas_ready(void);
 void flexnic_loadmon(uint32_t cur_ts);
 
 static void init_vm_weights(double *vm_weights);
-static inline void update_budget(int threads_launched, uint64_t now_us);
+static inline void update_budget(int threads_launched, uint64_t cur_tsc);
 uint64_t get_budget_delta(int vmid, int ctxid);
 void boost_budget(int vmid, int ctxid, int64_t incr);
 struct budget_statistics get_budget_stats(int vmid, int ctxid);
@@ -64,14 +64,15 @@ static int epfd;
 
 double vm_weights[FLEXNIC_PL_VMST_NUM];
 uint64_t last_bu_update_ts = 0;
-static uint32_t budget_ts = 0;
+static uint64_t budget_ts = 0;
+static uint64_t budget_period_tsc = 0;
 
 int slowpath_main(int threads_launched)
 {
   struct notify_blockstate nbs;
   uint32_t last_print = 0;
   uint32_t loadmon_ts = 0;
-  uint32_t budget_check_ts;
+  uint64_t budget_check_tsc;
 
   kernel_notifyfd = eventfd(0, EFD_NONBLOCK);
   assert(kernel_notifyfd != -1);
@@ -93,6 +94,7 @@ int slowpath_main(int threads_launched)
     fprintf(stderr, "timeout_init failed\n");
     return EXIT_FAILURE;
   }
+  budget_period_tsc = config.bu_update_freq * util_timeout_tsc_per_us();
 
   /* initialize kni */
   if (kni_init())
@@ -152,26 +154,26 @@ int slowpath_main(int threads_launched)
     
     cur_ts = util_timeout_time_us();
     n += nicif_poll();
-    budget_check_ts = util_timeout_time_us();
-    update_budget(threads_launched, budget_check_ts);
+    budget_check_tsc = util_rdtsc();
+    update_budget(threads_launched, budget_check_tsc);
     #if VIRTUOSO_GRE
       n += ovs_poll();
     #endif
     n += cc_poll(cur_ts);
-    budget_check_ts = util_timeout_time_us();
-    update_budget(threads_launched, budget_check_ts);
+    budget_check_tsc = util_rdtsc();
+    update_budget(threads_launched, budget_check_tsc);
     n += appif_poll();
-    budget_check_ts = util_timeout_time_us();
-    update_budget(threads_launched, budget_check_ts);
+    budget_check_tsc = util_rdtsc();
+    update_budget(threads_launched, budget_check_tsc);
     n += kni_poll();
-    budget_check_ts = util_timeout_time_us();
-    update_budget(threads_launched, budget_check_ts);
+    budget_check_tsc = util_rdtsc();
+    update_budget(threads_launched, budget_check_tsc);
     tcp_poll();
-    budget_check_ts = util_timeout_time_us();
-    update_budget(threads_launched, budget_check_ts);
+    budget_check_tsc = util_rdtsc();
+    update_budget(threads_launched, budget_check_tsc);
     util_timeout_poll_ts(&timeout_mgr, cur_ts);
-    budget_check_ts = util_timeout_time_us();
-    update_budget(threads_launched, budget_check_ts);
+    budget_check_tsc = util_rdtsc();
+    update_budget(threads_launched, budget_check_tsc);
 
     if (config.fp_autoscale && cur_ts - loadmon_ts >= 10000)
     {
@@ -183,8 +185,8 @@ int slowpath_main(int threads_launched)
     {
       slowpath_block(cur_ts);
       notify_canblock_reset(&nbs);
-      budget_check_ts = util_timeout_time_us();
-      update_budget(threads_launched, budget_check_ts);
+      budget_check_tsc = util_rdtsc();
+      update_budget(threads_launched, budget_check_tsc);
     }
 
     if (cur_ts - last_print >= 1000000)
@@ -214,11 +216,10 @@ static void init_vm_weights(double *vm_weights)
   }
 }
 
-static inline void update_budget(int threads_launched, uint64_t now_us)
+static inline void update_budget(int threads_launched, uint64_t cur_tsc)
 {
   int vmid, ctxid;
   uint16_t vm_count, vm_idx;
-  uint64_t cur_tsc;
   int64_t incr, weighted_incr;
   int64_t total_budget;
   double delta_weight;
@@ -226,21 +227,24 @@ static inline void update_budget(int threads_launched, uint64_t now_us)
   double weights_sum = 0;
   double deltas[threads_launched];
 #ifdef BUDGET_DEBUG_STATS
+  uint64_t now_us;
   struct budget_debug_fast_snapshot debug_snapshot;
   int64_t budget_before;
   int64_t budget_after;
   uint64_t applied_distribution;
 #endif
 
-  if (now_us - budget_ts < config.bu_update_freq)
+  if (cur_tsc - budget_ts < budget_period_tsc)
   {
     return;
   }
-  budget_ts = now_us;
+  budget_ts = cur_tsc;
 
-  cur_tsc = util_rdtsc();
   total_budget = config.bu_boost * (cur_tsc - last_bu_update_ts);
   vm_count = tas_registered_vm_count_get();
+#ifdef BUDGET_DEBUG_STATS
+  now_us = util_timeout_time_us();
+#endif
 
   if (vm_count == 0) {
 #ifdef BUDGET_DEBUG_STATS
