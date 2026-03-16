@@ -31,6 +31,7 @@
 #include <rte_interrupts.h>
 
 #include <tas_memif.h>
+#include <virtuoso.h>
 #include <utils_rng.h>
 
 #define BATCH_SIZE 16
@@ -134,6 +135,13 @@ struct dataplane_context {
   uint64_t loadmon_cyc_busy;
 
   uint64_t kernel_drop;
+#ifdef BUDGET_DEBUG_STATS
+  volatile uint64_t budget_debug_consumed_total;
+  volatile uint64_t budget_debug_consumed_vm[FLEXNIC_PL_VMST_NUM];
+  int budget_debug_work_conserving_total;
+  int budget_debug_work_conserving_vm[FLEXNIC_PL_VMST_NUM];
+  volatile uint64_t budget_debug_work_conserving_cycles[FLEXNIC_PL_VMST_NUM];
+#endif
 #ifdef DATAPLANE_STATS
   /********************************************************/
   /* Stats */

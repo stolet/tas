@@ -850,6 +850,41 @@ static void spend_budget(struct dataplane_context *ctx, uint64_t cycles)
   double counter, ratio;
   uint64_t vm_cycles;
   double counters_sum = 0;
+#ifdef BUDGET_DEBUG_STATS
+  double wc_counter, wc_ratio;
+  double wc_counters_sum = 0;
+#endif
+
+#ifdef BUDGET_DEBUG_STATS
+  if (ctx->counters_total == 0 && ctx->budget_debug_work_conserving_total != 0)
+  {
+    vm_count = tas_registered_vm_count_get();
+    if (vm_count == 0)
+    {
+      for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++)
+      {
+        ctx->budget_debug_work_conserving_vm[vmid] = 0;
+      }
+      ctx->budget_debug_work_conserving_total = 0;
+      return;
+    }
+
+    for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
+    {
+      vmid = tas_registered_vm_ids[vm_idx];
+      wc_counter = ctx->budget_debug_work_conserving_vm[vmid];
+      wc_counters_sum += wc_counter;
+      wc_ratio = wc_counter / ctx->budget_debug_work_conserving_total;
+      vm_cycles = cycles * wc_ratio;
+      __sync_fetch_and_add(&ctx->budget_debug_work_conserving_cycles[vmid],
+          vm_cycles);
+      ctx->budget_debug_work_conserving_vm[vmid] = 0;
+    }
+
+    ctx->budget_debug_work_conserving_total = 0;
+    return;
+  }
+#endif
 
   if (ctx->counters_total == 0)
     return;
@@ -875,9 +910,24 @@ static void spend_budget(struct dataplane_context *ctx, uint64_t cycles)
     assert(ratio >= 0 && ratio <= 1);
     vm_cycles = cycles * ratio;
     __sync_fetch_and_sub(&ctx->budgets[vmid].budget, vm_cycles);
+#ifdef BUDGET_DEBUG_STATS
+    __sync_fetch_and_add(&ctx->budget_debug_consumed_total, vm_cycles);
+    __sync_fetch_and_add(&ctx->budget_debug_consumed_vm[vmid], vm_cycles);
+#endif
     ctx->vm_counters[vmid] = 0;
   }
 
   assert(counters_sum == ctx->counters_total);
   ctx->counters_total = 0;
+#ifdef BUDGET_DEBUG_STATS
+  if (ctx->budget_debug_work_conserving_total != 0)
+  {
+    for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
+    {
+      vmid = tas_registered_vm_ids[vm_idx];
+      ctx->budget_debug_work_conserving_vm[vmid] = 0;
+    }
+    ctx->budget_debug_work_conserving_total = 0;
+  }
+#endif
 }

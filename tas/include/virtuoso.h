@@ -29,4 +29,7 @@
 #define VIRTUOSO_GRE 0
 #define VIRTUOSO_OVS 0
 
+/* Uncomment to enable per-core budget debug statistics. */
+#define BUDGET_DEBUG_STATS
+
 #endif /* ndef VIRTUOSO_H_ */

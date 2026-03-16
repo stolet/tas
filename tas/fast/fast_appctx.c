@@ -390,6 +390,11 @@ static int fast_appctx_poll_fetch(struct dataplane_context *ctx, uint32_t actx_i
   if (spend_budget) {
     ctx->vm_counters[vm_id] += atx->msg.connupdate.tx_bump;
     ctx->counters_total += atx->msg.connupdate.tx_bump;
+#ifdef BUDGET_DEBUG_STATS
+  } else {
+    ctx->budget_debug_work_conserving_vm[vm_id] += atx->msg.connupdate.tx_bump;
+    ctx->budget_debug_work_conserving_total += atx->msg.connupdate.tx_bump;
+#endif
   }
 
   return 0;

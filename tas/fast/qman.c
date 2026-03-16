@@ -465,6 +465,10 @@ static inline int vm_qman_poll(struct dataplane_context *ctx,
       {
         vm_queue_fire(vqman, vq, vq->id, q_bytes, bytes_sum, cnt - x, cnt);
       }
+#ifdef BUDGET_DEBUG_STATS
+      ctx->budget_debug_work_conserving_vm[vq->id] += bytes_sum;
+      ctx->budget_debug_work_conserving_total += bytes_sum;
+#endif
     } else
     {
       vm_queue_activate(vqman, vq, vq->id);

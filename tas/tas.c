@@ -42,6 +42,7 @@
 #include <utils_sync.h>
 
 #include <tas.h>
+#include <budget_debug.h>
 #include <fastpath.h>
 #include "fast/internal.h"
 #include "slow/internal.h"
@@ -351,6 +352,29 @@ uint64_t tas_get_budget(int vmid, int ctxid)
 {
   return __sync_fetch_and_add(&ctxs[ctxid]->budgets[vmid].budget, 0);
 }
+
+#ifdef BUDGET_DEBUG_STATS
+int64_t tas_get_budget_raw(int vmid, int ctxid)
+{
+  return __sync_fetch_and_add(&ctxs[ctxid]->budgets[vmid].budget, 0);
+}
+
+void tas_budget_debug_snapshot_core(int ctxid,
+    struct budget_debug_fast_snapshot *snapshot)
+{
+  int vmid;
+  struct dataplane_context *ctx = ctxs[ctxid];
+
+  snapshot->consumed_total = __sync_lock_test_and_set(
+      &ctx->budget_debug_consumed_total, 0);
+  for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++) {
+    snapshot->consumed_vm[vmid] = __sync_lock_test_and_set(
+        &ctx->budget_debug_consumed_vm[vmid], 0);
+    snapshot->work_conserving_vm[vmid] = __sync_lock_test_and_set(
+        &ctx->budget_debug_work_conserving_cycles[vmid], 0);
+  }
+}
+#endif
 
 void boost_budget(int vmid, int ctxid, int64_t incr)
 {
