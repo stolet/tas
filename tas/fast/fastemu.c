@@ -361,10 +361,14 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
 {
   int ret;
   unsigned i, n;
+  uint8_t batch_has_budgeted_vm = 0;
   uint8_t freebuf[BATCH_SIZE] = {0};
+  uint8_t rx_drop[BATCH_SIZE] = {0};
+  uint8_t rx_spend_budget[BATCH_SIZE] = {0};
   void *fss[BATCH_SIZE];
   struct tcp_opts tcpopts[BATCH_SIZE];
   struct network_buf_handle *bhs[BATCH_SIZE];
+  struct flextcp_pl_flowst *fs;
 
   n = BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_num < n)
@@ -396,6 +400,29 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
     fast_flows_packet_fss(ctx, bhs, fss, n);
   #endif
 
+  for (i = 0; i < n; i++)
+  {
+    if (fss[i] == NULL) {
+      continue;
+    }
+
+    fs = fss[i];
+    if (ctx->budgets[fs->vm_id].budget > 0) {
+      rx_spend_budget[i] = 1;
+      batch_has_budgeted_vm = 1;
+    }
+  }
+
+  if (batch_has_budgeted_vm) {
+    for (i = 0; i < n; i++)
+    {
+      if (fss[i] != NULL && rx_spend_budget[i] == 0) {
+        rx_drop[i] = 1;
+        fss[i] = NULL;
+      }
+    }
+  }
+
   /* prefetch packet contents (2nd cache line, TS opt overlaps) */
   for (i = 0; i < n; i++)
   {
@@ -411,13 +438,18 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
 
   for (i = 0; i < n; i++)
   {
+    if (rx_drop[i]) {
+      ret = 0;
+    }
     /* run fast-path for flows with flow state */
-    if (fss[i] != NULL)
+    else if (fss[i] != NULL)
     {
       #if VIRTUOSO_GRE
-        ret = fast_flows_packet_gre(ctx, bhs[i], fss[i], &tcpopts[i], ts);
+        ret = fast_flows_packet_gre(ctx, bhs[i], fss[i], &tcpopts[i],
+            rx_spend_budget[i], ts);
       #else
-        ret = fast_flows_packet(ctx, bhs[i], fss[i], &tcpopts[i], ts);
+        ret = fast_flows_packet(ctx, bhs[i], fss[i], &tcpopts[i],
+            rx_spend_budget[i], ts);
       #endif
     }
     else

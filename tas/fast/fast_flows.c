@@ -351,7 +351,7 @@ void fast_flows_packet_pfbufs(struct dataplane_context *ctx,
 /* Received packet */
 int fast_flows_packet(struct dataplane_context *ctx,
     struct network_buf_handle *nbh, void *fsp, struct tcp_opts *opts,
-    uint32_t ts)
+    int spend_budget, uint32_t ts)
 {
   struct pkt_tcp *p = network_buf_bufoff(nbh);
   struct flextcp_pl_flowst *fs = fsp;
@@ -378,10 +378,17 @@ int fast_flows_packet(struct dataplane_context *ctx,
       f_beui32(p->tcp.ackno), TCPH_FLAGS(&p->tcp), payload_bytes);
 #endif
 
-  ctx->vm_counters[fs->vm_id] += payload_bytes;
-  ctx->counters_total += payload_bytes;
+  if (spend_budget) {
+    ctx->vm_counters[fs->vm_id] += payload_bytes;
+    ctx->counters_total += payload_bytes;
+#ifdef BUDGET_DEBUG_STATS
+  } else {
+    ctx->budget_debug_work_conserving_vm[fs->vm_id] += payload_bytes;
+    ctx->budget_debug_work_conserving_total += payload_bytes;
+#endif
+  }
 
-  if (ctx->budgets[fs->vm_id].budget <= 0) {
+  if (spend_budget && ctx->budgets[fs->vm_id].budget <= 0) {
     return 0;
   }
 
@@ -730,7 +737,7 @@ slowpath:
 /* Received packet */
 int fast_flows_packet_gre(struct dataplane_context *ctx,
     struct network_buf_handle *nbh, void *fsp, struct tcp_opts *opts,
-    uint32_t ts)
+    int spend_budget, uint32_t ts)
 {
   struct pkt_gre *p = network_buf_bufoff(nbh);
   struct flextcp_pl_flowst *fs = fsp;
@@ -757,10 +764,17 @@ int fast_flows_packet_gre(struct dataplane_context *ctx,
       f_beui32(p->tcp.ackno), TCPH_FLAGS(&p->tcp), payload_bytes);
 #endif
 
-  ctx->vm_counters[fs->vm_id] += payload_bytes;
-  ctx->counters_total += payload_bytes;
+  if (spend_budget) {
+    ctx->vm_counters[fs->vm_id] += payload_bytes;
+    ctx->counters_total += payload_bytes;
+#ifdef BUDGET_DEBUG_STATS
+  } else {
+    ctx->budget_debug_work_conserving_vm[fs->vm_id] += payload_bytes;
+    ctx->budget_debug_work_conserving_total += payload_bytes;
+#endif
+  }
 
-  if (ctx->budgets[fs->vm_id].budget <= 0) {
+  if (spend_budget && ctx->budgets[fs->vm_id].budget <= 0) {
     return 0;
   }
 
