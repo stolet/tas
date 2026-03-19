@@ -70,6 +70,15 @@
   } while (0)
 #endif
 
+#ifdef BATCH_SIZE_STATS
+#define BATCH_STATS_ADD(c, f, n) __sync_fetch_and_add(&(c)->stat_batch_##f, (n))
+#else
+#define BATCH_STATS_ADD(c, f, n) \
+  do                             \
+  {                              \
+  } while (0)
+#endif
+
 static void dataplane_block(struct dataplane_context *ctx, uint32_t ts);
 static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
                         uint64_t tsc) __attribute__((noinline));
@@ -356,6 +365,35 @@ void dataplane_dump_stats(void)
 }
 #endif
 
+#ifdef BATCH_SIZE_STATS
+void dataplane_batch_stats_collect(struct dataplane_batch_stats *stats)
+{
+  struct dataplane_context *ctx;
+  unsigned i;
+
+  stats->rx_polls = 0;
+  stats->rx_total = 0;
+  stats->qm_polls = 0;
+  stats->qm_total = 0;
+  stats->qs_polls = 0;
+  stats->qs_total = 0;
+
+  for (i = 0; i < fp_cores_max; i++)
+  {
+    ctx = ctxs[i];
+    if (ctx == NULL)
+      continue;
+
+    stats->rx_polls += __sync_lock_test_and_set(&ctx->stat_batch_rx_polls, 0);
+    stats->rx_total += __sync_lock_test_and_set(&ctx->stat_batch_rx_total, 0);
+    stats->qm_polls += __sync_lock_test_and_set(&ctx->stat_batch_qm_polls, 0);
+    stats->qm_total += __sync_lock_test_and_set(&ctx->stat_batch_qm_total, 0);
+    stats->qs_polls += __sync_lock_test_and_set(&ctx->stat_batch_qs_polls, 0);
+    stats->qs_total += __sync_lock_test_and_set(&ctx->stat_batch_qs_total, 0);
+  }
+}
+#endif
+
 static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
                         uint64_t tsc)
 {
@@ -375,6 +413,7 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
     n = TXBUF_SIZE - ctx->tx_num;
 
   STATS_ADD(ctx, rx_poll, 1);
+  BATCH_STATS_ADD(ctx, rx_polls, 1);
 
   /* receive packets */
   ret = network_poll(&ctx->net, n, bhs);
@@ -385,6 +424,7 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
   }
 
   STATS_ADD(ctx, rx_total, n);
+  BATCH_STATS_ADD(ctx, rx_total, ret);
   n = ret;
 
   /* prefetch packet contents (1st cache line) */
@@ -483,6 +523,8 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
 {
   unsigned total;
 
+  BATCH_STATS_ADD(ctx, qs_polls, 1);
+
   if (ctx->poll_rounds % MAX_POLL_ROUNDS == 0 || ctx->act_head == IDXLIST_INVAL)
   {
     total = poll_all_queues(ctx, ts);
@@ -492,6 +534,7 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
     total = poll_active_queues(ctx, ts);
   }
   ctx->poll_rounds = (ctx->poll_rounds + 1) % MAX_POLL_ROUNDS;
+  BATCH_STATS_ADD(ctx, qs_total, total);
 
   return total;
 }
@@ -640,6 +683,7 @@ static unsigned poll_qman(struct dataplane_context *ctx, uint32_t ts)
     max = TXBUF_SIZE - ctx->tx_num;
 
   STATS_ADD(ctx, qm_poll, 1);
+  BATCH_STATS_ADD(ctx, qm_polls, 1);
 
   /* allocate buffers contents */
   max = bufcache_prealloc(ctx, max, &handles);
@@ -654,6 +698,7 @@ static unsigned poll_qman(struct dataplane_context *ctx, uint32_t ts)
   }
 
   STATS_ADD(ctx, qm_total, ret);
+  BATCH_STATS_ADD(ctx, qm_total, ret);
   for (i = 0; i < ret; i++)
   {
     rte_prefetch0(handles[i]);

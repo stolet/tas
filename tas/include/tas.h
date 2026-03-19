@@ -29,6 +29,9 @@
 #include <config.h>
 #include <packet_defs.h>
 
+/* Uncomment to log per-second average batch sizes for dataplane polls. */
+// #define BATCH_SIZE_STATS
+
 /** @addtogroup tas
  *  @brief TAS.
  */
