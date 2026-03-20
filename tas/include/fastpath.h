@@ -67,6 +67,15 @@ struct qman_thread {
   struct utils_rng rng;
 };
 
+struct dataplane_batch_stats {
+  uint64_t rx_polls;
+  uint64_t rx_total;
+  uint64_t qm_polls;
+  uint64_t qm_total;
+  uint64_t qs_polls;
+  uint64_t qs_total;
+};
+
 
 struct dataplane_context {
   struct network_thread net;
@@ -100,6 +109,14 @@ struct dataplane_context {
   uint64_t loadmon_cyc_busy;
 
   uint64_t kernel_drop;
+#ifdef BATCH_SIZE_STATS
+  uint64_t stat_batch_rx_polls;
+  uint64_t stat_batch_rx_total;
+  uint64_t stat_batch_qm_polls;
+  uint64_t stat_batch_qm_total;
+  uint64_t stat_batch_qs_polls;
+  uint64_t stat_batch_qs_total;
+#endif
 #ifdef DATAPLANE_STATS
   /********************************************************/
   /* Stats */
@@ -128,6 +145,15 @@ int dataplane_init(void);
 int dataplane_context_init(struct dataplane_context *ctx);
 void dataplane_context_destroy(struct dataplane_context *ctx);
 void dataplane_loop(struct dataplane_context *ctx);
+#ifdef BATCH_SIZE_STATS
+void dataplane_batch_stats_collect(struct dataplane_batch_stats *stats);
+#else
+static inline void dataplane_batch_stats_collect(
+    struct dataplane_batch_stats *stats)
+{
+  (void) stats;
+}
+#endif
 #ifdef DATAPLANE_STATS
 void dataplane_dump_stats(void);
 #endif

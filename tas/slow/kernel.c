@@ -32,6 +32,7 @@
 
 #include <utils.h>
 #include <tas.h>
+#include <fastpath.h>
 #include "internal.h"
 
 static void slowpath_block(uint32_t cur_ts);
@@ -39,12 +40,32 @@ static void timeout_trigger(struct timeout *to, uint8_t type, void *opaque);
 static void signal_tas_ready(void);
 void flexnic_loadmon(uint32_t cur_ts);
 
+#ifdef BATCH_SIZE_STATS
+static void batch_stats_format_avg(char *buf, size_t len, uint64_t total,
+    uint64_t polls);
+#endif
+
 struct timeout_manager timeout_mgr;
 static int exited = 0;
 struct kernel_statistics kstats;
 uint32_t cur_ts;
 int kernel_notifyfd = 0;
 static int epfd;
+
+#ifdef BATCH_SIZE_STATS
+static void batch_stats_format_avg(char *buf, size_t len, uint64_t total,
+    uint64_t polls)
+{
+  uint64_t avg_scaled = 0;
+
+  if (polls != 0) {
+    avg_scaled = (total * 100) / polls;
+  }
+
+  snprintf(buf, len, "%" PRIu64 ".%02" PRIu64, avg_scaled / 100,
+      avg_scaled % 100);
+}
+#endif
 
 int slowpath_main(void)
 {
@@ -139,9 +160,26 @@ int slowpath_main(void)
 
     if (cur_ts - last_print >= 1000000) {
       if (!config.quiet) {
+#ifdef BATCH_SIZE_STATS
+        struct dataplane_batch_stats batch_stats;
+        char rx_avg[32], qm_avg[32], qs_avg[32];
+
+        dataplane_batch_stats_collect(&batch_stats);
+        batch_stats_format_avg(rx_avg, sizeof(rx_avg), batch_stats.rx_total,
+            batch_stats.rx_polls);
+        batch_stats_format_avg(qm_avg, sizeof(qm_avg), batch_stats.qm_total,
+            batch_stats.qm_polls);
+        batch_stats_format_avg(qs_avg, sizeof(qs_avg), batch_stats.qs_total,
+            batch_stats.qs_polls);
+        printf("stats: drops=%"PRIu64" k_rexmit=%"PRIu64" ecn=%"PRIu64
+            " acks=%"PRIu64" rx_batch_avg=%s qman_batch_avg=%s"
+            " queues_batch_avg=%s\n", kstats.drops, kstats.kernel_rexmit,
+            kstats.ecn_marked, kstats.acks, rx_avg, qm_avg, qs_avg);
+#else
         printf("stats: drops=%"PRIu64" k_rexmit=%"PRIu64" ecn=%"PRIu64" acks=%"
             PRIu64"\n", kstats.drops, kstats.kernel_rexmit, kstats.ecn_marked,
             kstats.acks);
+#endif
         fflush(stdout);
       }
       last_print = cur_ts;
