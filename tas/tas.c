@@ -58,6 +58,8 @@ volatile unsigned fp_cores_cur = 1;
 volatile unsigned fp_scale_to = 0;
 _Atomic uint16_t tas_registered_vm_count = 0;
 uint16_t tas_registered_vm_ids[FLEXNIC_PL_VMST_NUM];
+_Atomic uint16_t tas_registered_ctx_counts[FLEXNIC_PL_VMST_NUM];
+uint16_t tas_registered_ctx_ids[FLEXNIC_PL_VMST_NUM][FLEXNIC_PL_APPCTX_NUM];
 _Atomic uint16_t tas_registered_app_count = 0;
 
 static unsigned threads_launched = 0;
@@ -67,6 +69,8 @@ struct budget_statistics budget_statistics;
 struct dataplane_context **ctxs = NULL;
 struct core_load *core_loads = NULL;
 static uint8_t tas_registered_vm_slots[FLEXNIC_PL_VMST_NUM];
+static uint8_t tas_registered_ctx_slots[FLEXNIC_PL_VMST_NUM]
+    [FLEXNIC_PL_APPCTX_NUM];
 
 static int start_threads(void);
 static void thread_error(void);
@@ -94,6 +98,39 @@ void tas_register_vm(uint16_t vmid)
   tas_registered_vm_slots[vmid] = 1;
   tas_registered_vm_ids[idx] = vmid;
   atomic_store_explicit(&tas_registered_vm_count, idx + 1,
+      memory_order_release);
+}
+
+void tas_register_appctx(uint16_t vmid, uint16_t ctxid)
+{
+  uint16_t idx;
+
+  if (vmid >= FLEXNIC_PL_VMST_NUM) {
+    fprintf(stderr, "tas_register_appctx: invalid vm id %u\n", vmid);
+    abort();
+  }
+
+  if (ctxid >= FLEXNIC_PL_APPCTX_NUM) {
+    fprintf(stderr, "tas_register_appctx: invalid ctx id %u\n", ctxid);
+    abort();
+  }
+
+  if (tas_registered_ctx_slots[vmid][ctxid] != 0) {
+    return;
+  }
+
+  idx = atomic_load_explicit(&tas_registered_ctx_counts[vmid],
+      memory_order_relaxed);
+  if (idx >= FLEXNIC_PL_APPCTX_NUM) {
+    fprintf(stderr,
+        "tas_register_appctx: ctx registration overflow vm=%u (%u)\n",
+        vmid, idx);
+    abort();
+  }
+
+  tas_registered_ctx_slots[vmid][ctxid] = 1;
+  tas_registered_ctx_ids[vmid][idx] = ctxid;
+  atomic_store_explicit(&tas_registered_ctx_counts[vmid], idx + 1,
       memory_order_release);
 }
 

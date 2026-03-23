@@ -238,6 +238,7 @@ int nicif_appctx_add(uint16_t vmid, uint16_t appid, uint32_t db,
   ast->ctx_ids[ast->ctx_num] = db;
   MEM_BARRIER();
   ast->ctx_num++;
+  tas_register_appctx(vmid, db);
 
   return 0;
 }
