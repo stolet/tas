@@ -83,7 +83,7 @@ static void dataplane_block(struct dataplane_context *ctx, uint32_t ts);
 static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
                         uint64_t tsc) __attribute__((noinline));
 static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts) __attribute__((noinline));
-static unsigned poll_active_queues(struct dataplane_context *ctx, uint32_t ts) __attribute__((noinline));
+static unsigned poll_active_queues(struct dataplane_context *ctx, uint32_t ts) __attribute__((noinline, unused));
 static unsigned poll_all_queues(struct dataplane_context *ctx, uint32_t ts) __attribute__((noinline));
 ;
 static unsigned poll_kernel(struct dataplane_context *ctx, uint32_t ts) __attribute__((noinline));
@@ -525,15 +525,7 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
 
   BATCH_STATS_ADD(ctx, qs_polls, 1);
 
-  if (ctx->poll_rounds % MAX_POLL_ROUNDS == 0 || ctx->act_head == IDXLIST_INVAL)
-  {
-    total = poll_all_queues(ctx, ts);
-  }
-  else
-  {
-    total = poll_active_queues(ctx, ts);
-  }
-  ctx->poll_rounds = (ctx->poll_rounds + 1) % MAX_POLL_ROUNDS;
+  total = poll_all_queues(ctx, ts);
   BATCH_STATS_ADD(ctx, qs_total, total);
 
   return total;
@@ -563,7 +555,6 @@ static unsigned poll_active_queues(struct dataplane_context *ctx, uint32_t ts)
 
   /* fetch packets from active contexts */
   k = fast_appctx_poll_fetch_active(ctx, max, &total, &n_rem, rem_ctxs, aqes);
-
   for (i = 0; i < k; i++)
   {
     ret = fast_appctx_poll_bump(ctx, aqes[i], handles[num_bufs], ts);
@@ -577,7 +568,7 @@ static unsigned poll_active_queues(struct dataplane_context *ctx, uint32_t ts)
   /* probe receive queue on all active contexts */
   fast_actx_rxq_probe_active(ctx);
 
-  /* update round */
+  /* update active-list state for the next round */
   ctx->act_head = ctx->polled_vms[ctx->act_head].next;
   ctx->act_tail = ctx->polled_vms[ctx->act_tail].next;
 
@@ -615,7 +606,6 @@ static unsigned poll_all_queues(struct dataplane_context *ctx, uint32_t ts)
 
   /* fetch up to max pkts from groups in round robin fashion */
   k = fast_appctx_poll_fetch_all(ctx, max, &total, aqes);
-
   for (i = 0; i < k; i++)
   {
     ret = fast_appctx_poll_bump(ctx, aqes[i], handles[num_bufs], ts);
