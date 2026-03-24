@@ -83,6 +83,18 @@ struct polled_vm {
   struct polled_context ctxs[FLEXNIC_PL_APPST_CTX_NUM];
 };
 
+struct dataplane_poll_ctx {
+  struct flextcp_pl_appctx *actx;
+  uint16_t vmid;
+  uint16_t ctxid;
+};
+
+struct dataplane_poll_vm {
+  uint16_t vmid;
+  uint16_t start;
+  uint16_t count;
+};
+
 struct vm_budget {
   uint16_t vmid;
   volatile int64_t budget;
@@ -162,6 +174,12 @@ struct dataplane_context {
   uint32_t act_head;
   uint32_t act_tail;
   struct polled_vm polled_vms[FLEXNIC_PL_VMST_NUM];  
+  uint32_t registered_topology_gen;
+  uint16_t registered_vm_count;
+  uint16_t registered_ctx_count;
+  struct dataplane_poll_vm registered_vms[FLEXNIC_PL_VMST_NUM];
+  struct dataplane_poll_ctx
+      registered_ctxs[FLEXNIC_PL_VMST_NUM * FLEXNIC_PL_APPCTX_NUM];
 
   /********************************************************/
   /* group resource budget */

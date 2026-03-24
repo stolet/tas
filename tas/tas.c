@@ -60,6 +60,7 @@ _Atomic uint16_t tas_registered_vm_count = 0;
 uint16_t tas_registered_vm_ids[FLEXNIC_PL_VMST_NUM];
 _Atomic uint16_t tas_registered_ctx_counts[FLEXNIC_PL_VMST_NUM];
 uint16_t tas_registered_ctx_ids[FLEXNIC_PL_VMST_NUM][FLEXNIC_PL_APPCTX_NUM];
+_Atomic uint32_t tas_registered_topology_gen = 1;
 _Atomic uint16_t tas_registered_app_count = 0;
 
 static unsigned threads_launched = 0;
@@ -99,6 +100,8 @@ void tas_register_vm(uint16_t vmid)
   tas_registered_vm_ids[idx] = vmid;
   atomic_store_explicit(&tas_registered_vm_count, idx + 1,
       memory_order_release);
+  atomic_fetch_add_explicit(&tas_registered_topology_gen, 1,
+      memory_order_release);
 }
 
 void tas_register_appctx(uint16_t vmid, uint16_t ctxid)
@@ -131,6 +134,8 @@ void tas_register_appctx(uint16_t vmid, uint16_t ctxid)
   tas_registered_ctx_slots[vmid][ctxid] = 1;
   tas_registered_ctx_ids[vmid][idx] = ctxid;
   atomic_store_explicit(&tas_registered_ctx_counts[vmid], idx + 1,
+      memory_order_release);
+  atomic_fetch_add_explicit(&tas_registered_topology_gen, 1,
       memory_order_release);
 }
 

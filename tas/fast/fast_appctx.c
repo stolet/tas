@@ -44,13 +44,19 @@ void fast_appctx_poll_fetch_active_vm(struct dataplane_context *ctx,
     struct polled_vm *act_vm, uint16_t *k, uint16_t max,
     unsigned *total, int *n_rem, struct polled_context *rem_ctxs[BATCH_SIZE],
     void *aqes[BATCH_SIZE], bool spend_budget);
-int fast_appctx_poll_fetch(struct dataplane_context *ctx, uint32_t actx_id,
-    uint16_t vm_id, void **pqe, bool spend_budget);
+int fast_appctx_poll_fetch(struct dataplane_context *ctx,
+    struct flextcp_pl_appctx *actx, uint32_t actx_id, uint16_t vm_id,
+    void **pqe, bool spend_budget);
 
 void fast_actx_rxq_probe_active_vm(struct dataplane_context *ctx, 
     struct polled_vm *act_vm);
-int fast_actx_rxq_probe(struct dataplane_context *ctx, uint32_t id,
-    uint16_t vm_id);
+int fast_actx_rxq_probe(struct flextcp_pl_appctx *actx, uint16_t vm_id);
+
+static inline struct flextcp_pl_appctx *fast_appctx_lookup(
+    struct dataplane_context *ctx, uint16_t vmid, uint32_t cid)
+{
+  return &fp_state->appctx[ctx->id][vmid][cid];
+}
     
 
 void inline fast_appctx_poll_pf_active_vm(struct dataplane_context *ctx, uint32_t vmid)
@@ -61,7 +67,7 @@ void inline fast_appctx_poll_pf_active_vm(struct dataplane_context *ctx, uint32_
 
   cid = act_vm->act_ctx_head;
   do {
-    fast_appctx_poll_pf(ctx, cid, vmid);
+    fast_appctx_poll_pf(fast_appctx_lookup(ctx, vmid, cid), vmid);
     cid = act_vm->ctxs[cid].next;
   } while(cid != act_vm->act_ctx_head);
 }
@@ -77,10 +83,8 @@ void inline fast_appctx_poll_pf_active(struct dataplane_context *ctx)
   } while (vmid != ctx->act_head);
 } 
 
-void inline fast_appctx_poll_pf(struct dataplane_context *ctx, uint32_t cid,
-    uint16_t vmid)
+void inline fast_appctx_poll_pf(struct flextcp_pl_appctx *actx, uint16_t vmid)
 {
-  struct flextcp_pl_appctx *actx = &fp_state->appctx[ctx->id][vmid][cid];
   rte_prefetch0(dma_pointer(actx->tx_base + actx->tx_head, 1, vmid));
 }
 
@@ -91,11 +95,14 @@ void fast_appctx_poll_fetch_active_ctx(struct dataplane_context *ctx,
 {
   int ret;
   unsigned i_b;
+  struct flextcp_pl_appctx *actx;
+
+  actx = fast_appctx_lookup(ctx, act_ctx->vmid, act_ctx->id);
 
   for (i_b = 0; i_b < BATCH_SIZE && *k < max; i_b++) 
   {
-    ret = fast_appctx_poll_fetch(ctx, act_ctx->id, 
-        act_ctx->vmid, &aqes[*k], spend_budget);
+    ret = fast_appctx_poll_fetch(ctx, actx, act_ctx->id, act_ctx->vmid,
+        &aqes[*k], spend_budget);
     if (ret == 0)
     {
       *k = *k + 1;
@@ -182,10 +189,10 @@ int fast_appctx_poll_fetch_active(struct dataplane_context *ctx, uint16_t max,
   return k;
 }
 
-int fast_appctx_poll_fetch(struct dataplane_context *ctx, uint32_t actx_id,
-    uint16_t vm_id, void **pqe, bool spend_budget)
+int fast_appctx_poll_fetch(struct dataplane_context *ctx,
+    struct flextcp_pl_appctx *actx, uint32_t actx_id, uint16_t vm_id,
+    void **pqe, bool spend_budget)
 {
-  struct flextcp_pl_appctx *actx = &fp_state->appctx[ctx->id][vm_id][actx_id];
   struct flextcp_pl_atx *atx;
   uint8_t type;
   uint32_t flow_id;
@@ -290,10 +297,8 @@ int fast_actx_rxq_alloc(struct dataplane_context *ctx,
   return ret;
 }
 
-int fast_actx_rxq_probe(struct dataplane_context *ctx, uint32_t cid,
-    uint16_t vmid)
+int fast_actx_rxq_probe(struct flextcp_pl_appctx *actx, uint16_t vmid)
 {
-  struct flextcp_pl_appctx *actx = &fp_state->appctx[ctx->id][vmid][cid];
   struct flextcp_pl_arx *parx;
   uint32_t pos, i;
   if (actx->rx_avail > actx->rx_len / 2) {
@@ -332,7 +337,7 @@ void inline fast_actx_rxq_probe_active_vm(struct dataplane_context *ctx,
   cid = act_vm->act_ctx_head;
   vmid = act_vm->id;
   do {
-    fast_actx_rxq_probe(ctx, cid, vmid);
+    fast_actx_rxq_probe(fast_appctx_lookup(ctx, vmid, cid), vmid);
     cid = act_vm->ctxs[cid].next;
   } while(cid != act_vm->act_ctx_head); 
 }
