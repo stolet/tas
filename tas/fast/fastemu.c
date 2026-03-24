@@ -249,7 +249,7 @@ void dataplane_loop(struct dataplane_context *ctx)
     s_cycs = util_rdtsc();
     n += poll_rx(ctx, ts, cyc);
     e_cycs = util_rdtsc();
-    // spend_budget(ctx, e_cycs - s_cycs);
+    spend_budget(ctx, e_cycs - s_cycs);
 
     STATS_TS(rx);
     tx_flush(ctx);
@@ -261,7 +261,7 @@ void dataplane_loop(struct dataplane_context *ctx)
     s_cycs = util_rdtsc();
     n += poll_qman(ctx, ts);
     e_cycs = util_rdtsc();
-    // spend_budget(ctx, e_cycs - s_cycs);
+    spend_budget(ctx, e_cycs - s_cycs);
    
     STATS_TS(qm);
     STATS_TSADD(ctx, cyc_qm, qm - rx);
@@ -269,7 +269,7 @@ void dataplane_loop(struct dataplane_context *ctx)
     s_cycs = util_rdtsc();
     n += poll_queues(ctx, ts);
     e_cycs = util_rdtsc();
-    // spend_budget(ctx, e_cycs - s_cycs);
+    spend_budget(ctx, e_cycs - s_cycs);
   
     STATS_TS(qs);
     STATS_TSADD(ctx, cyc_qs, qs - qm);
@@ -277,7 +277,7 @@ void dataplane_loop(struct dataplane_context *ctx)
     s_cycs = util_rdtsc();
     n += poll_kernel(ctx, ts);
     e_cycs = util_rdtsc();
-    // spend_budget(ctx, e_cycs - s_cycs);
+    spend_budget(ctx, e_cycs - s_cycs);
 
     /* flush transmit buffer */
     tx_flush(ctx);
@@ -1041,7 +1041,6 @@ static void spend_budget(struct dataplane_context *ctx, uint64_t cycles)
   uint16_t *vm_ids;
   double counter, ratio;
   uint64_t vm_cycles;
-  double counters_sum = 0;
 #ifdef BUDGET_DEBUG_STATS
   double wc_counter, wc_ratio;
   double wc_counters_sum = 0;
