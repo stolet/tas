@@ -520,18 +520,24 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
 
 static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
 {
+  struct poll_registered_vm {
+    uint16_t vmid;
+    uint16_t ctx_count;
+    uint16_t *ctxids;
+  } reg_vms[FLEXNIC_PL_VMST_NUM];
   int ret;
   struct network_buf_handle **handles;
   void *aqes[BATCH_SIZE];
   unsigned total;
   uint16_t max, k, i, num_bufs = 0;
-  uint16_t vm_count, next_vm, *vmids;
+  uint16_t vm_count, next_vm;
   uint16_t ctx_count, next_ctx, *ctxids;
   unsigned int i_v, i_c, i_b;
-  uint32_t vmid, ctxid;
+  uint32_t vmid, ctxid, pf_ctxid;
   struct polled_vm *p_vm;
+  struct poll_registered_vm *reg_vm;
   int oob_n, oob_i = 0;
-  int oob_vms[FLEXNIC_PL_VMST_NUM];
+  uint16_t oob_vms[FLEXNIC_PL_VMST_NUM];
   uint16_t temp_k;
 
   BATCH_STATS_ADD(ctx, qs_polls, 1);
@@ -550,34 +556,12 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
     goto out;
   }
 
-  next_vm = ctx->poll_next_vm;
-  if (next_vm >= vm_count)
-    next_vm = 0;
-  vmids = tas_registered_vm_ids;
-
   for (i_v = 0; i_v < vm_count; i_v++)
   {
-    vmid = vmids[next_vm];
-    p_vm = &ctx->polled_vms[vmid];
-    ctx_count = tas_registered_ctx_count_get(vmid);
-    if (ctx_count != 0)
-    {
-      next_ctx = p_vm->poll_next_ctx;
-      if (next_ctx >= ctx_count)
-        next_ctx = 0;
-      ctxids = tas_registered_ctx_ids[vmid];
-
-      for (i_c = 0; i_c < ctx_count; i_c++)
-      {
-        ctxid = ctxids[next_ctx];
-        fast_appctx_poll_pf(ctx, ctxid, vmid);
-        if (++next_ctx == ctx_count)
-          next_ctx = 0;
-      }
-    }
-
-    if (++next_vm == vm_count)
-      next_vm = 0;
+    vmid = tas_registered_vm_ids[i_v];
+    reg_vms[i_v].vmid = vmid;
+    reg_vms[i_v].ctx_count = tas_registered_ctx_count_get(vmid);
+    reg_vms[i_v].ctxids = tas_registered_ctx_ids[vmid];
   }
 
   total = 0;
@@ -588,22 +572,33 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
 
   for (i_v = 0; i_v < vm_count && k < max; i_v++)
   {
-    vmid = vmids[next_vm];
+    reg_vm = &reg_vms[next_vm];
+    vmid = reg_vm->vmid;
     p_vm = &ctx->polled_vms[vmid];
+    ctx_count = reg_vm->ctx_count;
+    ctxids = reg_vm->ctxids;
 
     if (vm_budget_read_relaxed(&ctx->budgets[vmid]) > 0)
     {
-      ctx_count = tas_registered_ctx_count_get(vmid);
       if (ctx_count != 0)
       {
         next_ctx = p_vm->poll_next_ctx;
         if (next_ctx >= ctx_count)
           next_ctx = 0;
-        ctxids = tas_registered_ctx_ids[vmid];
+        fast_appctx_poll_pf(ctx, ctxids[next_ctx], vmid);
 
         for (i_c = 0; i_c < ctx_count && k < max; i_c++)
         {
           ctxid = ctxids[next_ctx];
+          if (i_c + 1 < ctx_count)
+          {
+            uint16_t pf_idx = next_ctx + 1;
+            if (pf_idx == ctx_count)
+              pf_idx = 0;
+            pf_ctxid = ctxids[pf_idx];
+            fast_appctx_poll_pf(ctx, pf_ctxid, vmid);
+          }
+
           for (i_b = 0; i_b < BATCH_SIZE && k < max; i_b++)
           {
             ret = fast_appctx_poll_fetch(ctx, ctxid, vmid, &aqes[k], true);
@@ -622,7 +617,7 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
       }
     } else
     {
-      oob_vms[oob_i++] = vmid;
+      oob_vms[oob_i++] = next_vm;
     }
 
     if (++next_vm == vm_count)
@@ -634,20 +629,31 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
   oob_n = oob_i;
   for (oob_i = 0; oob_i < oob_n && temp_k == 0 && k < max; oob_i++)
   {
-    vmid = oob_vms[oob_i];
+    reg_vm = &reg_vms[oob_vms[oob_i]];
+    vmid = reg_vm->vmid;
     p_vm = &ctx->polled_vms[vmid];
-    ctx_count = tas_registered_ctx_count_get(vmid);
+    ctx_count = reg_vm->ctx_count;
+    ctxids = reg_vm->ctxids;
     if (ctx_count == 0)
       continue;
 
     next_ctx = p_vm->poll_next_ctx;
     if (next_ctx >= ctx_count)
       next_ctx = 0;
-    ctxids = tas_registered_ctx_ids[vmid];
+    fast_appctx_poll_pf(ctx, ctxids[next_ctx], vmid);
 
     for (i_c = 0; i_c < ctx_count && k < max; i_c++)
     {
       ctxid = ctxids[next_ctx];
+      if (i_c + 1 < ctx_count)
+      {
+        uint16_t pf_idx = next_ctx + 1;
+        if (pf_idx == ctx_count)
+          pf_idx = 0;
+        pf_ctxid = ctxids[pf_idx];
+        fast_appctx_poll_pf(ctx, pf_ctxid, vmid);
+      }
+
       for (i_b = 0; i_b < BATCH_SIZE && k < max; i_b++)
       {
         ret = fast_appctx_poll_fetch(ctx, ctxid, vmid, &aqes[k], false);
@@ -678,9 +684,10 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
 
   for (i_v = 0; i_v < vm_count; i_v++)
   {
-    vmid = vmids[i_v];
-    ctx_count = tas_registered_ctx_count_get(vmid);
-    ctxids = tas_registered_ctx_ids[vmid];
+    reg_vm = &reg_vms[i_v];
+    vmid = reg_vm->vmid;
+    ctx_count = reg_vm->ctx_count;
+    ctxids = reg_vm->ctxids;
 
     for (i_c = 0; i_c < ctx_count; i_c++)
     {
