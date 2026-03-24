@@ -166,7 +166,7 @@ int dataplane_context_init(struct dataplane_context *ctx)
   {
     /* Initialize budget for each VM */
     ctx->budgets[i].vmid = i;
-    ctx->budgets[i].budget = config.bu_max_budget;
+    vm_budget_write_relaxed(&ctx->budgets[i], config.bu_max_budget);
 
     /* Set phase counters to 0 */
     ctx->vm_counters[i] = 0;
@@ -446,7 +446,7 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
     }
 
     fs = fss[i];
-    if (ctx->budgets[fs->vm_id].budget > 0) {
+    if (vm_budget_read_relaxed(&ctx->budgets[fs->vm_id]) > 0) {
       rx_spend_budget[i] = 1;
       batch_has_budgeted_vm = 1;
     }
@@ -591,7 +591,7 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
     vmid = vmids[next_vm];
     p_vm = &ctx->polled_vms[vmid];
 
-    if (ctx->budgets[vmid].budget > 0)
+    if (vm_budget_read_relaxed(&ctx->budgets[vmid]) > 0)
     {
       ctx_count = tas_registered_ctx_count_get(vmid);
       if (ctx_count != 0)
@@ -1113,10 +1113,12 @@ static void spend_budget(struct dataplane_context *ctx, uint64_t cycles)
     counter = ctx->vm_counters[vmid];
     ratio = counter / ctx->counters_total;
     vm_cycles = cycles * ratio;
-    __sync_fetch_and_sub(&ctx->budgets[vmid].budget, vm_cycles);
+    vm_budget_fetch_sub_relaxed(&ctx->budgets[vmid], vm_cycles);
 #ifdef BUDGET_DEBUG_STATS
-    __sync_fetch_and_add(&ctx->budget_debug_consumed_total, vm_cycles);
-    __sync_fetch_and_add(&ctx->budget_debug_consumed_vm[vmid], vm_cycles);
+    __atomic_fetch_add(&ctx->budget_debug_consumed_total, vm_cycles,
+        __ATOMIC_RELAXED);
+    __atomic_fetch_add(&ctx->budget_debug_consumed_vm[vmid], vm_cycles,
+        __ATOMIC_RELAXED);
 #endif
     ctx->vm_counters[vmid] = 0;
   }

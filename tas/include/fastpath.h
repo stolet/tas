@@ -91,6 +91,40 @@ struct vm_budget {
   volatile uint64_t cycles_rx;
 };
 
+static inline int64_t vm_budget_read_relaxed(const struct vm_budget *budget)
+{
+  return __atomic_load_n(&budget->budget, __ATOMIC_RELAXED);
+}
+
+static inline void vm_budget_write_relaxed(struct vm_budget *budget,
+    int64_t value)
+{
+  __atomic_store_n(&budget->budget, value, __ATOMIC_RELAXED);
+}
+
+static inline int64_t vm_budget_fetch_add_relaxed(struct vm_budget *budget,
+    int64_t value)
+{
+  return __atomic_fetch_add(&budget->budget, value, __ATOMIC_RELAXED);
+}
+
+static inline int64_t vm_budget_fetch_sub_relaxed(struct vm_budget *budget,
+    int64_t value)
+{
+  return __atomic_fetch_sub(&budget->budget, value, __ATOMIC_RELAXED);
+}
+
+static inline uint64_t vm_budget_cycles_read_relaxed(volatile uint64_t *cycles)
+{
+  return __atomic_load_n(cycles, __ATOMIC_RELAXED);
+}
+
+static inline uint64_t vm_budget_cycles_exchange_relaxed(
+    volatile uint64_t *cycles, uint64_t value)
+{
+  return __atomic_exchange_n(cycles, value, __ATOMIC_RELAXED);
+}
+
 struct dataplane_batch_stats {
   uint64_t rx_polls;
   uint64_t rx_total;

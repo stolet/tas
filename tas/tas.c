@@ -344,21 +344,19 @@ struct budget_statistics get_budget_stats(int vmid, int ctxid)
   struct budget_statistics stats;
 
   /* Get stats for this logging round */
-  stats.budget = ctxs[ctxid]->budgets[vmid].budget;
-  stats.cycles_poll = ctxs[ctxid]->budgets[vmid].cycles_poll;
-  stats.cycles_tx = ctxs[ctxid]->budgets[vmid].cycles_tx;
-  stats.cycles_rx = ctxs[ctxid]->budgets[vmid].cycles_rx;
+  stats.budget = vm_budget_read_relaxed(&ctxs[ctxid]->budgets[vmid]);
+  stats.cycles_poll = vm_budget_cycles_read_relaxed(
+      &ctxs[ctxid]->budgets[vmid].cycles_poll);
+  stats.cycles_tx = vm_budget_cycles_read_relaxed(
+      &ctxs[ctxid]->budgets[vmid].cycles_tx);
+  stats.cycles_rx = vm_budget_cycles_read_relaxed(
+      &ctxs[ctxid]->budgets[vmid].cycles_rx);
   stats.cycles_total = stats.cycles_poll + stats.cycles_tx + stats.cycles_rx;
 
   /* Reset stats for this logging round (budget is not reset) */
-  __sync_fetch_and_sub(&ctxs[ctxid]->budgets[vmid].cycles_poll,
-      stats.cycles_poll);
-
-  __sync_fetch_and_sub(&ctxs[ctxid]->budgets[vmid].cycles_tx,
-      stats.cycles_tx);
-
-  __sync_fetch_and_sub(&ctxs[ctxid]->budgets[vmid].cycles_rx,
-      stats.cycles_rx);
+  vm_budget_cycles_exchange_relaxed(&ctxs[ctxid]->budgets[vmid].cycles_poll, 0);
+  vm_budget_cycles_exchange_relaxed(&ctxs[ctxid]->budgets[vmid].cycles_tx, 0);
+  vm_budget_cycles_exchange_relaxed(&ctxs[ctxid]->budgets[vmid].cycles_rx, 0);
 
   return stats;
 }
@@ -374,26 +372,26 @@ void print_budget() {
     for (int ctxid = 0; ctxid < threads_launched; ctxid++)
     {
       fprintf(stderr, "vmid=%d ctxid=%d budget=%ld\n",
-          vmid, ctxid, ctxs[ctxid]->budgets[vmid].budget);
+          vmid, ctxid, vm_budget_read_relaxed(&ctxs[ctxid]->budgets[vmid]));
     }
   }
 }
 
 uint64_t get_budget_delta(int vmid, int ctxid)
 {
-  int64_t budget = __sync_fetch_and_add(&ctxs[ctxid]->budgets[vmid].budget, 0);
+  int64_t budget = vm_budget_read_relaxed(&ctxs[ctxid]->budgets[vmid]);
   return config.bu_max_budget - budget;
 }
 
 uint64_t tas_get_budget(int vmid, int ctxid)
 {
-  return __sync_fetch_and_add(&ctxs[ctxid]->budgets[vmid].budget, 0);
+  return vm_budget_read_relaxed(&ctxs[ctxid]->budgets[vmid]);
 }
 
 #ifdef BUDGET_DEBUG_STATS
 int64_t tas_get_budget_raw(int vmid, int ctxid)
 {
-  return __sync_fetch_and_add(&ctxs[ctxid]->budgets[vmid].budget, 0);
+  return vm_budget_read_relaxed(&ctxs[ctxid]->budgets[vmid]);
 }
 
 void tas_budget_debug_snapshot_core(int ctxid,
@@ -402,13 +400,13 @@ void tas_budget_debug_snapshot_core(int ctxid,
   int vmid;
   struct dataplane_context *ctx = ctxs[ctxid];
 
-  snapshot->consumed_total = __sync_lock_test_and_set(
-      &ctx->budget_debug_consumed_total, 0);
+  snapshot->consumed_total = __atomic_exchange_n(&ctx->budget_debug_consumed_total,
+      0, __ATOMIC_RELAXED);
   for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++) {
-    snapshot->consumed_vm[vmid] = __sync_lock_test_and_set(
-        &ctx->budget_debug_consumed_vm[vmid], 0);
-    snapshot->work_conserving_vm[vmid] = __sync_lock_test_and_set(
-        &ctx->budget_debug_work_conserving_cycles[vmid], 0);
+    snapshot->consumed_vm[vmid] = __atomic_exchange_n(
+        &ctx->budget_debug_consumed_vm[vmid], 0, __ATOMIC_RELAXED);
+    snapshot->work_conserving_vm[vmid] = __atomic_exchange_n(
+        &ctx->budget_debug_work_conserving_cycles[vmid], 0, __ATOMIC_RELAXED);
   }
 }
 #endif
@@ -416,7 +414,7 @@ void tas_budget_debug_snapshot_core(int ctxid,
 void boost_budget(int vmid, int ctxid, int64_t incr)
 {
   int64_t old_budget, new_budget, max_budget;
-  old_budget = __sync_fetch_and_add(&ctxs[ctxid]->budgets[vmid].budget, 0);
+  old_budget = vm_budget_read_relaxed(&ctxs[ctxid]->budgets[vmid]);
   new_budget = old_budget + incr;
   max_budget = config.bu_max_budget;  
 
@@ -424,7 +422,7 @@ void boost_budget(int vmid, int ctxid, int64_t incr)
   {
     incr = max_budget - old_budget;
   }
-  __sync_fetch_and_add(&ctxs[ctxid]->budgets[vmid].budget, incr);
+  vm_budget_fetch_add_relaxed(&ctxs[ctxid]->budgets[vmid], incr);
 }
 
 void flexnic_loadmon(uint32_t ts)

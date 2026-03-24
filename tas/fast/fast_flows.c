@@ -387,7 +387,7 @@ int fast_flows_packet(struct dataplane_context *ctx,
 #endif
   }
 
-  if (spend_budget && ctx->budgets[fs->vm_id].budget <= 0) {
+  if (spend_budget && vm_budget_read_relaxed(&ctx->budgets[fs->vm_id]) <= 0) {
     return 0;
   }
 
@@ -772,7 +772,7 @@ int fast_flows_packet_gre(struct dataplane_context *ctx,
 #endif
   }
 
-  if (spend_budget && ctx->budgets[fs->vm_id].budget <= 0) {
+  if (spend_budget && vm_budget_read_relaxed(&ctx->budgets[fs->vm_id]) <= 0) {
     return 0;
   }
 
@@ -1387,7 +1387,7 @@ static inline int flow_should_signal_ece(struct dataplane_context *ctx,
   }
 
   double threshold = (double) config.bu_max_budget * config.bu_ecn_thresh;
-  return (double) ctx->budgets[vm_id].budget < threshold;
+  return (double) vm_budget_read_relaxed(&ctx->budgets[vm_id]) < threshold;
 }
 
 #if VIRTUOSO_GRE == 0
