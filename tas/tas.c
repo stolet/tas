@@ -349,7 +349,7 @@ struct budget_statistics get_budget_stats(int vmid, int ctxid)
   struct budget_statistics stats;
 
   /* Get stats for this logging round */
-  stats.budget = vm_budget_read_relaxed(&ctxs[ctxid]->budgets[vmid]);
+  stats.budget = dataplane_budget_effective_read_relaxed(ctxs[ctxid], vmid);
   stats.cycles_poll = vm_budget_cycles_read_relaxed(
       &ctxs[ctxid]->budgets[vmid].cycles_poll);
   stats.cycles_tx = vm_budget_cycles_read_relaxed(
@@ -377,26 +377,30 @@ void print_budget() {
     for (int ctxid = 0; ctxid < threads_launched; ctxid++)
     {
       fprintf(stderr, "vmid=%d ctxid=%d budget=%ld\n",
-          vmid, ctxid, vm_budget_read_relaxed(&ctxs[ctxid]->budgets[vmid]));
+          vmid, ctxid,
+          dataplane_budget_effective_read_relaxed(ctxs[ctxid], vmid));
     }
   }
 }
 
 uint64_t get_budget_delta(int vmid, int ctxid)
 {
-  int64_t budget = vm_budget_read_relaxed(&ctxs[ctxid]->budgets[vmid]);
+  int64_t budget = dataplane_budget_effective_read_relaxed(ctxs[ctxid], vmid);
+  if (budget >= config.bu_max_budget)
+    return 0;
   return config.bu_max_budget - budget;
 }
 
 uint64_t tas_get_budget(int vmid, int ctxid)
 {
-  return vm_budget_read_relaxed(&ctxs[ctxid]->budgets[vmid]);
+  int64_t budget = dataplane_budget_effective_read_relaxed(ctxs[ctxid], vmid);
+  return budget > 0 ? budget : 0;
 }
 
 #ifdef BUDGET_DEBUG_STATS
 int64_t tas_get_budget_raw(int vmid, int ctxid)
 {
-  return vm_budget_read_relaxed(&ctxs[ctxid]->budgets[vmid]);
+  return dataplane_budget_effective_read_relaxed(ctxs[ctxid], vmid);
 }
 
 void tas_budget_debug_snapshot_core(int ctxid,
@@ -419,7 +423,7 @@ void tas_budget_debug_snapshot_core(int ctxid,
 void boost_budget(int vmid, int ctxid, int64_t incr)
 {
   int64_t old_budget, new_budget, max_budget;
-  old_budget = vm_budget_read_relaxed(&ctxs[ctxid]->budgets[vmid]);
+  old_budget = dataplane_budget_effective_read_relaxed(ctxs[ctxid], vmid);
   new_budget = old_budget + incr;
   max_budget = config.bu_max_budget;  
 
@@ -427,7 +431,8 @@ void boost_budget(int vmid, int ctxid, int64_t incr)
   {
     incr = max_budget - old_budget;
   }
-  vm_budget_fetch_add_relaxed(&ctxs[ctxid]->budgets[vmid], incr);
+  if (incr > 0)
+    vm_budget_fetch_add_relaxed(&ctxs[ctxid]->budgets[vmid], incr);
 }
 
 void flexnic_loadmon(uint32_t ts)

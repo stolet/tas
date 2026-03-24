@@ -392,7 +392,6 @@ static inline int vm_qman_poll(struct dataplane_context *ctx,
   uint32_t idx;
   int cnt, temp_cnt, x, bytes_sum;
   struct qman_thread *t = &ctx->qman;
-  struct vm_budget *budgets = ctx->budgets;
   struct vm_qman *vqman = t->vqman;
   struct flow_qman *fqman;
   struct vm_queue *vq, *rvq;
@@ -414,7 +413,7 @@ static inline int vm_qman_poll(struct dataplane_context *ctx,
     if (vq->next_idx == IDXLIST_INVAL)
       vqman->tail_idx = IDXLIST_INVAL;
 
-    if (vm_budget_read_relaxed(&budgets[idx]) > 0)
+    if (dataplane_budget_available(ctx, idx))
     {
       fqman = vq->fqman;
       skpl_state->rate_limited = 0;

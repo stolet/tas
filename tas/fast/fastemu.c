@@ -103,6 +103,8 @@ static inline void tx_send(struct dataplane_context *ctx,
 
 static void spend_budget(struct dataplane_context *ctx, 
     uint64_t cycles);
+static void spend_budget_slow(struct dataplane_context *ctx, uint64_t cycles)
+    __attribute__((noinline, cold));
 
 static void arx_cache_flush(struct dataplane_context *ctx, uint64_t tsc) __attribute__((noinline));
 
@@ -168,7 +170,8 @@ int dataplane_context_init(struct dataplane_context *ctx)
   {
     /* Initialize budget for each VM */
     ctx->budgets[i].vmid = i;
-    vm_budget_write_relaxed(&ctx->budgets[i], config.bu_max_budget);
+    vm_budget_write_relaxed(&ctx->budgets[i], 0);
+    dataplane_budget_cache_write_relaxed(ctx, i, config.bu_max_budget);
 
     /* Set phase counters to 0 */
     ctx->vm_counters[i] = 0;
@@ -451,7 +454,7 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
     }
 
     fs = fss[i];
-    if (vm_budget_read_relaxed(&ctx->budgets[fs->vm_id]) > 0) {
+    if (dataplane_budget_available(ctx, fs->vm_id)) {
       rx_spend_budget[i] = 1;
       batch_has_budgeted_vm = 1;
     }
@@ -613,7 +616,7 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
     ctx_count = reg_vm->count;
     reg_ctxs = &ctx->registered_ctxs[reg_vm->start];
 
-    if (vm_budget_read_relaxed(&ctx->budgets[vmid]) > 0)
+    if (dataplane_budget_available(ctx, vmid))
     {
       if (ctx_count != 0)
       {
@@ -1073,7 +1076,7 @@ static void arx_cache_flush(struct dataplane_context *ctx, uint64_t tsc)
   ctx->arx_num = 0;
 }
 
-static void spend_budget(struct dataplane_context *ctx, uint64_t cycles)
+static void spend_budget_slow(struct dataplane_context *ctx, uint64_t cycles)
 {
   int vmid;
   uint16_t vm_count, vm_idx, active_vm_count;
@@ -1152,7 +1155,7 @@ static void spend_budget(struct dataplane_context *ctx, uint64_t cycles)
     counter = ctx->vm_counters[vmid];
     ratio = counter / ctx->counters_total;
     vm_cycles = cycles * ratio;
-    vm_budget_fetch_sub_relaxed(&ctx->budgets[vmid], vm_cycles);
+    dataplane_budget_consume(ctx, vmid, vm_cycles);
 #ifdef BUDGET_DEBUG_STATS
     __atomic_fetch_add(&ctx->budget_debug_consumed_total, vm_cycles,
         __ATOMIC_RELAXED);
@@ -1167,6 +1170,70 @@ static void spend_budget(struct dataplane_context *ctx, uint64_t cycles)
 #ifdef BUDGET_DEBUG_STATS
   if (ctx->budget_debug_work_conserving_total != 0)
   {
+    for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
+    {
+      vmid = tas_registered_vm_ids[vm_idx];
+      ctx->budget_debug_work_conserving_vm[vmid] = 0;
+    }
+    ctx->budget_debug_work_conserving_total = 0;
+  }
+#endif
+}
+
+static void spend_budget(struct dataplane_context *ctx, uint64_t cycles)
+{
+  uint16_t active_vm_count, vm_idx;
+  uint16_t *vm_ids;
+  uint16_t vmid;
+  uint32_t total;
+  double scale;
+  uint64_t vm_cycles;
+#ifdef BUDGET_DEBUG_STATS
+  uint16_t vm_count;
+#endif
+
+#ifdef BUDGET_DEBUG_STATS
+  if (ctx->counters_total == 0 && ctx->budget_debug_work_conserving_total != 0)
+  {
+    spend_budget_slow(ctx, cycles);
+    return;
+  }
+#endif
+
+  total = ctx->counters_total;
+  if (total == 0)
+    return;
+
+  active_vm_count = ctx->budget_active_num;
+  if (__builtin_expect(active_vm_count == 0, 0))
+  {
+    spend_budget_slow(ctx, cycles);
+    return;
+  }
+
+  vm_ids = ctx->budget_active_vms;
+  scale = (double) cycles / (double) total;
+
+  for (vm_idx = 0; vm_idx < active_vm_count; vm_idx++)
+  {
+    vmid = vm_ids[vm_idx];
+    vm_cycles = (uint64_t) ((double) ctx->vm_counters[vmid] * scale);
+    dataplane_budget_consume(ctx, vmid, vm_cycles);
+#ifdef BUDGET_DEBUG_STATS
+    __atomic_fetch_add(&ctx->budget_debug_consumed_total, vm_cycles,
+        __ATOMIC_RELAXED);
+    __atomic_fetch_add(&ctx->budget_debug_consumed_vm[vmid], vm_cycles,
+        __ATOMIC_RELAXED);
+#endif
+    ctx->vm_counters[vmid] = 0;
+  }
+
+  ctx->budget_active_num = 0;
+  ctx->counters_total = 0;
+#ifdef BUDGET_DEBUG_STATS
+  if (ctx->budget_debug_work_conserving_total != 0)
+  {
+    vm_count = tas_registered_vm_count_get();
     for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
     {
       vmid = tas_registered_vm_ids[vm_idx];
