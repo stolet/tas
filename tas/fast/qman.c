@@ -431,8 +431,7 @@ static inline int vm_qman_poll(struct dataplane_context *ctx,
           rvq = vq;
       }
 
-      ctx->vm_counters[idx] += bytes_sum;
-      ctx->counters_total += bytes_sum;
+      dataplane_budget_account(ctx, idx, bytes_sum);
 
     } else
     {

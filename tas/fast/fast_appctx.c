@@ -34,9 +34,6 @@
 #include "fastemu.h"
 
 void fast_appctx_poll_pf_active_vm(struct dataplane_context *ctx, uint32_t vmid);
-void fast_appctx_poll_pf_all_vm(struct dataplane_context *ctx, uint32_t vmid);
-static void fast_appctx_poll_pf(struct dataplane_context *ctx, uint32_t id, 
-    uint16_t vm_id);
 
 
 void fast_appctx_poll_fetch_active_ctx(struct dataplane_context *ctx,
@@ -47,19 +44,12 @@ void fast_appctx_poll_fetch_active_vm(struct dataplane_context *ctx,
     struct polled_vm *act_vm, uint16_t *k, uint16_t max,
     unsigned *total, int *n_rem, struct polled_context *rem_ctxs[BATCH_SIZE],
     void *aqes[BATCH_SIZE], bool spend_budget);
-void fast_appctx_poll_fetch_all_ctx(struct dataplane_context *ctx,
-    uint32_t vmid, uint32_t ctxid, uint16_t *k, uint16_t max,
-    unsigned *total, void *aqes[BATCH_SIZE], bool spend_budget);
-void fast_appctx_poll_fetch_all_vm(struct dataplane_context *ctx, 
-    uint32_t vmid, uint16_t *k, uint16_t max,
-    unsigned *total, void *aqes[BATCH_SIZE], bool spend_budget);
-static int fast_appctx_poll_fetch(struct dataplane_context *ctx, uint32_t actx_id,
+int fast_appctx_poll_fetch(struct dataplane_context *ctx, uint32_t actx_id,
     uint16_t vm_id, void **pqe, bool spend_budget);
 
 void fast_actx_rxq_probe_active_vm(struct dataplane_context *ctx, 
     struct polled_vm *act_vm);
-void fast_actx_rxq_probe_all_vm(struct dataplane_context *ctx, uint32_t vmid);
-static int fast_actx_rxq_probe(struct dataplane_context *ctx, uint32_t id,
+int fast_actx_rxq_probe(struct dataplane_context *ctx, uint32_t id,
     uint16_t vm_id);
     
 
@@ -87,61 +77,7 @@ void inline fast_appctx_poll_pf_active(struct dataplane_context *ctx)
   } while (vmid != ctx->act_head);
 } 
 
-void inline fast_appctx_poll_pf_all_vm(struct dataplane_context *ctx, uint32_t vmid)
-{
-  uint16_t ctx_count;
-  uint16_t next, *ctxids;
-  unsigned int i;
-  uint32_t cid;
-  struct polled_vm *p_vm;
-
-  ctx_count = tas_registered_ctx_count_get(vmid);
-  if (ctx_count == 0) {
-    return;
-  }
-
-  p_vm = &ctx->polled_vms[vmid];
-  next = p_vm->poll_next_ctx;
-  if (next >= ctx_count)
-    next = 0;
-  ctxids = tas_registered_ctx_ids[vmid];
-
-  for (i = 0; i < ctx_count; i++)
-  {
-    cid = ctxids[next];
-    fast_appctx_poll_pf(ctx, cid, vmid);
-    if (++next == ctx_count)
-      next = 0;
-  }
-}
-
-void inline fast_appctx_poll_pf_all(struct dataplane_context *ctx)
-{
-  uint16_t vm_count;
-  uint16_t next_vm, *vmids;
-  unsigned int i;
-  uint32_t vmid;
-
-  vm_count = tas_registered_vm_count_get();
-  if (vm_count == 0) {
-    return;
-  }
-
-  next_vm = ctx->poll_next_vm;
-  if (next_vm >= vm_count)
-    next_vm = 0;
-  vmids = tas_registered_vm_ids;
-
-  for  (i = 0; i < vm_count; i++)
-  {
-    vmid = vmids[next_vm];
-    fast_appctx_poll_pf_all_vm(ctx, vmid);
-    if (++next_vm == vm_count)
-      next_vm = 0;
-  }
-}
-
-static void inline fast_appctx_poll_pf(struct dataplane_context *ctx, uint32_t cid, 
+void inline fast_appctx_poll_pf(struct dataplane_context *ctx, uint32_t cid,
     uint16_t vmid)
 {
   struct flextcp_pl_appctx *actx = &fp_state->appctx[ctx->id][vmid][cid];
@@ -246,115 +182,7 @@ int fast_appctx_poll_fetch_active(struct dataplane_context *ctx, uint16_t max,
   return k;
 }
 
-void inline fast_appctx_poll_fetch_all_ctx(struct dataplane_context *ctx,
-    uint32_t vmid, uint32_t ctxid, uint16_t *k, uint16_t max,
-    unsigned *total, void *aqes[BATCH_SIZE], bool spend_budget)
-{
-  unsigned i_b;
-  int ret;
-  
-  for (i_b = 0; i_b < BATCH_SIZE && *k < max; i_b++) 
-  {
-    ret = fast_appctx_poll_fetch(ctx, ctxid, vmid, &aqes[*k], spend_budget);
-    
-    if (ret == 0) 
-    {
-      *k = *k + 1;
-    } else
-    {
-      return;
-    }
-
-    *total = *total + 1;
-  }
-}
-
-void inline fast_appctx_poll_fetch_all_vm(struct dataplane_context *ctx, 
-    uint32_t vmid, uint16_t *k, uint16_t max,
-    unsigned *total, void *aqes[BATCH_SIZE], bool spend_budget)
-{
-  uint16_t ctx_count;
-  uint16_t next, *ctxids;
-  unsigned i_c;
-  uint32_t ctxid;
-  struct polled_vm *p_vm;
-
-  p_vm = &ctx->polled_vms[vmid];
-  ctx_count = tas_registered_ctx_count_get(vmid);
-  if (ctx_count == 0) {
-    return;
-  }
-
-  next = p_vm->poll_next_ctx;
-  if (next >= ctx_count)
-    next = 0;
-  ctxids = tas_registered_ctx_ids[vmid];
-
-  for (i_c = 0; i_c < ctx_count && *k < max; i_c++)
-  {
-    ctxid = ctxids[next];
-    fast_appctx_poll_fetch_all_ctx(ctx, vmid, ctxid, k, max, total, aqes,
-        spend_budget);
-    if (++next == ctx_count)
-      next = 0;
-  }
-
-  p_vm->poll_next_ctx = next;
-}
-
-int fast_appctx_poll_fetch_all(struct dataplane_context *ctx, uint16_t max,
-    unsigned *total, void *aqes[BATCH_SIZE])
-{
-  unsigned i_v;
-  uint16_t temp_k, k = 0, vm_count, next_vm, *vmids;
-  uint32_t vmid;
-
-  int oob_n, oob_i = 0;
-  int oob_vms[FLEXNIC_PL_VMST_NUM];
-
-  vm_count = tas_registered_vm_count_get();
-  if (vm_count == 0) {
-    return 0;
-  }
-
-  next_vm = ctx->poll_next_vm;
-  if (next_vm >= vm_count)
-    next_vm = 0;
-  vmids = tas_registered_vm_ids;
-
-  for (i_v = 0; i_v < vm_count && k < max; i_v++)
-  {
-    vmid = vmids[next_vm];
-
-    if (ctx->budgets[vmid].budget > 0)
-    {
-      fast_appctx_poll_fetch_all_vm(ctx, vmid, &k, max, total, aqes, true);
-    } else 
-    {
-      oob_vms[oob_i] = vmid;
-      oob_i++;
-    }
-    if (++next_vm == vm_count)
-      next_vm = 0;
-  }
-
-  temp_k = k;
-  oob_n = oob_i;
-  for (oob_i = 0; oob_i < oob_n && temp_k == 0; oob_i++)
-  {
-    vmid = oob_vms[oob_i];
-    if (k < max)
-    {
-      fast_appctx_poll_fetch_all_vm(ctx, vmid, &k, max, total, aqes, false);
-    }
-  }
-
-  ctx->poll_next_vm = next_vm;
-
-  return k;
-}
-
-static int fast_appctx_poll_fetch(struct dataplane_context *ctx, uint32_t actx_id,
+int fast_appctx_poll_fetch(struct dataplane_context *ctx, uint32_t actx_id,
     uint16_t vm_id, void **pqe, bool spend_budget)
 {
   struct flextcp_pl_appctx *actx = &fp_state->appctx[ctx->id][vm_id][actx_id];
@@ -399,8 +227,7 @@ static int fast_appctx_poll_fetch(struct dataplane_context *ctx, uint32_t actx_i
   actx->tx_head = tx_head;
 
   if (spend_budget) {
-    ctx->vm_counters[vm_id] += atx->msg.connupdate.tx_bump;
-    ctx->counters_total += atx->msg.connupdate.tx_bump;
+    dataplane_budget_account(ctx, vm_id, atx->msg.connupdate.tx_bump);
 #ifdef BUDGET_DEBUG_STATS
   } else {
     ctx->budget_debug_work_conserving_vm[vm_id] += atx->msg.connupdate.tx_bump;
@@ -463,7 +290,7 @@ int fast_actx_rxq_alloc(struct dataplane_context *ctx,
   return ret;
 }
 
-static int fast_actx_rxq_probe(struct dataplane_context *ctx, uint32_t cid,
+int fast_actx_rxq_probe(struct dataplane_context *ctx, uint32_t cid,
     uint16_t vmid)
 {
   struct flextcp_pl_appctx *actx = &fp_state->appctx[ctx->id][vmid][cid];
@@ -521,36 +348,6 @@ void inline fast_actx_rxq_probe_active(struct dataplane_context *ctx)
     fast_actx_rxq_probe_active_vm(ctx, act_vm);
     vmid = ctx->polled_vms[vmid].next;
   } while (vmid != ctx->act_head);
-}
-
-void inline fast_actx_rxq_probe_all_vm(struct dataplane_context *ctx,
-    uint32_t vmid)
-{
-  uint16_t ctx_count;
-  unsigned int n;
-
-  ctx_count = tas_registered_ctx_count_get(vmid);
-  if (ctx_count == 0) {
-    return;
-  }
-
-  for (n = 0; n < ctx_count; n++) 
-  { 
-    fast_actx_rxq_probe(ctx, tas_registered_ctx_ids[vmid][n], vmid);
-  }
-}
-
-void inline fast_actx_rxq_probe_all(struct dataplane_context *ctx)
-{
-  uint16_t vm_count;
-  uint32_t vmid, vm_idx;
-
-  vm_count = tas_registered_vm_count_get();
-  for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
-  {
-    vmid = tas_registered_vm_ids[vm_idx];
-    fast_actx_rxq_probe_all_vm(ctx, vmid);
-  }
 }
 
 /*****************************************************************************/

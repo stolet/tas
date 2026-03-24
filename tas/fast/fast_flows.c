@@ -379,8 +379,7 @@ int fast_flows_packet(struct dataplane_context *ctx,
 #endif
 
   if (spend_budget) {
-    ctx->vm_counters[fs->vm_id] += payload_bytes;
-    ctx->counters_total += payload_bytes;
+    dataplane_budget_account(ctx, fs->vm_id, payload_bytes);
 #ifdef BUDGET_DEBUG_STATS
   } else {
     ctx->budget_debug_work_conserving_vm[fs->vm_id] += payload_bytes;
@@ -765,8 +764,7 @@ int fast_flows_packet_gre(struct dataplane_context *ctx,
 #endif
 
   if (spend_budget) {
-    ctx->vm_counters[fs->vm_id] += payload_bytes;
-    ctx->counters_total += payload_bytes;
+    dataplane_budget_account(ctx, fs->vm_id, payload_bytes);
 #ifdef BUDGET_DEBUG_STATS
   } else {
     ctx->budget_debug_work_conserving_vm[fs->vm_id] += payload_bytes;
@@ -1261,8 +1259,7 @@ void fast_flows_winretransmit(struct dataplane_context *ctx, uint32_t flow_id,
   struct flextcp_pl_flowst *fs = &fp_state->flowst[flow_id];
 
   fs_lock(fs);
-  ctx->counters_total += 1;
-  ctx->vm_counters[fs->vm_id] += 1;
+  dataplane_budget_account(ctx, fs->vm_id, 1);
   #if VIRTUOSO_GRE
     flow_tx_segment_gre(ctx, nbh, fs, fs->tx_next_seq, fs->rx_next_seq,
         fs->rx_avail, 0, 0, fs->tx_next_ts, ts, 0);
@@ -1281,8 +1278,7 @@ void fast_flows_retransmit(struct dataplane_context *ctx, uint32_t flow_id)
   uint32_t old_avail, new_avail = -1;
 
   fs_lock(fs);
-  ctx->counters_total += 1;
-  ctx->vm_counters[fs->vm_id] += 1;
+  dataplane_budget_account(ctx, fs->vm_id, 1);
 #ifdef FLEXNIC_TRACING
     struct flextcp_pl_trev_rexmit te_rexmit = {
         .flow_id = flow_id,

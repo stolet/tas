@@ -84,8 +84,6 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
                         uint64_t tsc) __attribute__((noinline));
 static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts) __attribute__((noinline));
 static unsigned poll_active_queues(struct dataplane_context *ctx, uint32_t ts) __attribute__((noinline, unused));
-static unsigned poll_all_queues(struct dataplane_context *ctx, uint32_t ts) __attribute__((noinline));
-;
 static unsigned poll_kernel(struct dataplane_context *ctx, uint32_t ts) __attribute__((noinline));
 static unsigned poll_qman(struct dataplane_context *ctx, uint32_t ts) __attribute__((noinline));
 static unsigned poll_qman_fwd(struct dataplane_context *ctx, uint32_t ts) __attribute__((noinline));
@@ -184,6 +182,7 @@ int dataplane_context_init(struct dataplane_context *ctx)
   }
   
   ctx->counters_total = 0;
+  ctx->budget_active_num = 0;
   ctx->poll_rounds = 0;
   ctx->poll_next_vm = 0;
   ctx->act_head = IDXLIST_INVAL;
@@ -250,7 +249,7 @@ void dataplane_loop(struct dataplane_context *ctx)
     s_cycs = util_rdtsc();
     n += poll_rx(ctx, ts, cyc);
     e_cycs = util_rdtsc();
-    spend_budget(ctx, e_cycs - s_cycs);
+    // spend_budget(ctx, e_cycs - s_cycs);
 
     STATS_TS(rx);
     tx_flush(ctx);
@@ -262,7 +261,7 @@ void dataplane_loop(struct dataplane_context *ctx)
     s_cycs = util_rdtsc();
     n += poll_qman(ctx, ts);
     e_cycs = util_rdtsc();
-    spend_budget(ctx, e_cycs - s_cycs);
+    // spend_budget(ctx, e_cycs - s_cycs);
    
     STATS_TS(qm);
     STATS_TSADD(ctx, cyc_qm, qm - rx);
@@ -270,7 +269,7 @@ void dataplane_loop(struct dataplane_context *ctx)
     s_cycs = util_rdtsc();
     n += poll_queues(ctx, ts);
     e_cycs = util_rdtsc();
-    spend_budget(ctx, e_cycs - s_cycs);
+    // spend_budget(ctx, e_cycs - s_cycs);
   
     STATS_TS(qs);
     STATS_TSADD(ctx, cyc_qs, qs - qm);
@@ -278,7 +277,7 @@ void dataplane_loop(struct dataplane_context *ctx)
     s_cycs = util_rdtsc();
     n += poll_kernel(ctx, ts);
     e_cycs = util_rdtsc();
-    spend_budget(ctx, e_cycs - s_cycs);
+    // spend_budget(ctx, e_cycs - s_cycs);
 
     /* flush transmit buffer */
     tx_flush(ctx);
@@ -521,11 +520,179 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
 
 static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
 {
+  int ret;
+  struct network_buf_handle **handles;
+  void *aqes[BATCH_SIZE];
   unsigned total;
+  uint16_t max, k, i, num_bufs = 0;
+  uint16_t vm_count, next_vm, *vmids;
+  uint16_t ctx_count, next_ctx, *ctxids;
+  unsigned int i_v, i_c, i_b;
+  uint32_t vmid, ctxid;
+  struct polled_vm *p_vm;
+  int oob_n, oob_i = 0;
+  int oob_vms[FLEXNIC_PL_VMST_NUM];
+  uint16_t temp_k;
 
   BATCH_STATS_ADD(ctx, qs_polls, 1);
 
-  total = poll_all_queues(ctx, ts);
+  STATS_ADD(ctx, qs_poll, 1);
+
+  max = BATCH_SIZE;
+  if (TXBUF_SIZE - ctx->tx_num < max)
+    max = TXBUF_SIZE - ctx->tx_num;
+
+  max = bufcache_prealloc(ctx, max, &handles);
+
+  vm_count = tas_registered_vm_count_get();
+  if (vm_count == 0 || max == 0) {
+    total = 0;
+    goto out;
+  }
+
+  next_vm = ctx->poll_next_vm;
+  if (next_vm >= vm_count)
+    next_vm = 0;
+  vmids = tas_registered_vm_ids;
+
+  for (i_v = 0; i_v < vm_count; i_v++)
+  {
+    vmid = vmids[next_vm];
+    p_vm = &ctx->polled_vms[vmid];
+    ctx_count = tas_registered_ctx_count_get(vmid);
+    if (ctx_count != 0)
+    {
+      next_ctx = p_vm->poll_next_ctx;
+      if (next_ctx >= ctx_count)
+        next_ctx = 0;
+      ctxids = tas_registered_ctx_ids[vmid];
+
+      for (i_c = 0; i_c < ctx_count; i_c++)
+      {
+        ctxid = ctxids[next_ctx];
+        fast_appctx_poll_pf(ctx, ctxid, vmid);
+        if (++next_ctx == ctx_count)
+          next_ctx = 0;
+      }
+    }
+
+    if (++next_vm == vm_count)
+      next_vm = 0;
+  }
+
+  total = 0;
+  k = 0;
+  next_vm = ctx->poll_next_vm;
+  if (next_vm >= vm_count)
+    next_vm = 0;
+
+  for (i_v = 0; i_v < vm_count && k < max; i_v++)
+  {
+    vmid = vmids[next_vm];
+    p_vm = &ctx->polled_vms[vmid];
+
+    if (ctx->budgets[vmid].budget > 0)
+    {
+      ctx_count = tas_registered_ctx_count_get(vmid);
+      if (ctx_count != 0)
+      {
+        next_ctx = p_vm->poll_next_ctx;
+        if (next_ctx >= ctx_count)
+          next_ctx = 0;
+        ctxids = tas_registered_ctx_ids[vmid];
+
+        for (i_c = 0; i_c < ctx_count && k < max; i_c++)
+        {
+          ctxid = ctxids[next_ctx];
+          for (i_b = 0; i_b < BATCH_SIZE && k < max; i_b++)
+          {
+            ret = fast_appctx_poll_fetch(ctx, ctxid, vmid, &aqes[k], true);
+            if (ret != 0)
+              break;
+
+            k++;
+            total++;
+          }
+
+          if (++next_ctx == ctx_count)
+            next_ctx = 0;
+        }
+
+        p_vm->poll_next_ctx = next_ctx;
+      }
+    } else
+    {
+      oob_vms[oob_i++] = vmid;
+    }
+
+    if (++next_vm == vm_count)
+      next_vm = 0;
+  }
+
+  /* Service out of budget VMs if nothing else to poll */
+  temp_k = k;
+  oob_n = oob_i;
+  for (oob_i = 0; oob_i < oob_n && temp_k == 0 && k < max; oob_i++)
+  {
+    vmid = oob_vms[oob_i];
+    p_vm = &ctx->polled_vms[vmid];
+    ctx_count = tas_registered_ctx_count_get(vmid);
+    if (ctx_count == 0)
+      continue;
+
+    next_ctx = p_vm->poll_next_ctx;
+    if (next_ctx >= ctx_count)
+      next_ctx = 0;
+    ctxids = tas_registered_ctx_ids[vmid];
+
+    for (i_c = 0; i_c < ctx_count && k < max; i_c++)
+    {
+      ctxid = ctxids[next_ctx];
+      for (i_b = 0; i_b < BATCH_SIZE && k < max; i_b++)
+      {
+        ret = fast_appctx_poll_fetch(ctx, ctxid, vmid, &aqes[k], false);
+        if (ret != 0)
+          break;
+
+        k++;
+        total++;
+      }
+
+      if (++next_ctx == ctx_count)
+        next_ctx = 0;
+    }
+
+    p_vm->poll_next_ctx = next_ctx;
+  }
+
+  ctx->poll_next_vm = next_vm;
+
+  for (i = 0; i < k; i++)
+  {
+    ret = fast_appctx_poll_bump(ctx, aqes[i], handles[num_bufs], ts);
+    if (ret == 0)
+      num_bufs++;
+  }
+
+  bufcache_alloc(ctx, num_bufs);
+
+  for (i_v = 0; i_v < vm_count; i_v++)
+  {
+    vmid = vmids[i_v];
+    ctx_count = tas_registered_ctx_count_get(vmid);
+    ctxids = tas_registered_ctx_ids[vmid];
+
+    for (i_c = 0; i_c < ctx_count; i_c++)
+    {
+      fast_actx_rxq_probe(ctx, ctxids[i_c], vmid);
+    }
+  }
+
+out:
+  STATS_ADD(ctx, qs_total, total);
+  if (total == 0)
+    STATS_ADD(ctx, qs_empty, total);
+
   BATCH_STATS_ADD(ctx, qs_total, total);
 
   return total;
@@ -575,49 +742,6 @@ static unsigned poll_active_queues(struct dataplane_context *ctx, uint32_t ts)
   /* remove contexts and apps that have not sent for a few rounds
      from active list */
   remove_ctxs_from_active(ctx, rem_ctxs, n_rem);
-
-  STATS_ADD(ctx, qs_total, total);
-  if (total == 0)
-    STATS_ADD(ctx, qs_empty, total);
-
-  return total;
-}
-
-/* Polls the queues for every application and context */
-static unsigned poll_all_queues(struct dataplane_context *ctx, uint32_t ts)
-{
-  int ret;
-  struct network_buf_handle **handles;
-  void *aqes[BATCH_SIZE];
-  unsigned total = 0;
-  uint16_t max, k, i, num_bufs = 0;
-
-  STATS_ADD(ctx, qs_poll, 1);
-
-  max = BATCH_SIZE;
-  if (TXBUF_SIZE - ctx->tx_num < max)
-    max = TXBUF_SIZE - ctx->tx_num;
-
-  /* allocate buffers contents */
-  max = bufcache_prealloc(ctx, max, &handles);
-
-  /* prefetch every ctx from every app */
-  fast_appctx_poll_pf_all(ctx);
-
-  /* fetch up to max pkts from groups in round robin fashion */
-  k = fast_appctx_poll_fetch_all(ctx, max, &total, aqes);
-  for (i = 0; i < k; i++)
-  {
-    ret = fast_appctx_poll_bump(ctx, aqes[i], handles[num_bufs], ts);
-    if (ret == 0)
-      num_bufs++;
-  }
-
-  /* apply buffer reservations */
-  bufcache_alloc(ctx, num_bufs);
-
-  /* probe every ctx from every app */
-  fast_actx_rxq_probe_all(ctx);
 
   STATS_ADD(ctx, qs_total, total);
   if (total == 0)
@@ -913,7 +1037,8 @@ static void arx_cache_flush(struct dataplane_context *ctx, uint64_t tsc)
 static void spend_budget(struct dataplane_context *ctx, uint64_t cycles)
 {
   int vmid;
-  uint16_t vm_count, vm_idx;
+  uint16_t vm_count, vm_idx, active_vm_count;
+  uint16_t *vm_ids;
   double counter, ratio;
   uint64_t vm_cycles;
   double counters_sum = 0;
@@ -956,25 +1081,38 @@ static void spend_budget(struct dataplane_context *ctx, uint64_t cycles)
   if (ctx->counters_total == 0)
     return;
 
+  active_vm_count = ctx->budget_active_num;
+
   vm_count = tas_registered_vm_count_get();
   if (vm_count == 0)
   {
-    for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++)
+    if (active_vm_count == 0)
+      active_vm_count = FLEXNIC_PL_VMST_NUM;
+
+    for (vm_idx = 0; vm_idx < active_vm_count; vm_idx++)
     {
+      vmid = (ctx->budget_active_num == 0) ? vm_idx : ctx->budget_active_vms[vm_idx];
       ctx->vm_counters[vmid] = 0;
     }
+    ctx->budget_active_num = 0;
     ctx->counters_total = 0;
     return;
   }
 
-  for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
+  if (active_vm_count == 0)
   {
-    vmid = tas_registered_vm_ids[vm_idx];
+    active_vm_count = vm_count;
+    vm_ids = tas_registered_vm_ids;
+  } else
+  {
+    vm_ids = ctx->budget_active_vms;
+  }
+
+  for (vm_idx = 0; vm_idx < active_vm_count; vm_idx++)
+  {
+    vmid = vm_ids[vm_idx];
     counter = ctx->vm_counters[vmid];
-    counters_sum += counter;
     ratio = counter / ctx->counters_total;
-    assert(counter <= ctx->counters_total);
-    assert(ratio >= 0 && ratio <= 1);
     vm_cycles = cycles * ratio;
     __sync_fetch_and_sub(&ctx->budgets[vmid].budget, vm_cycles);
 #ifdef BUDGET_DEBUG_STATS
@@ -984,7 +1122,7 @@ static void spend_budget(struct dataplane_context *ctx, uint64_t cycles)
     ctx->vm_counters[vmid] = 0;
   }
 
-  assert(counters_sum == ctx->counters_total);
+  ctx->budget_active_num = 0;
   ctx->counters_total = 0;
 #ifdef BUDGET_DEBUG_STATS
   if (ctx->budget_debug_work_conserving_total != 0)

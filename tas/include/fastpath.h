@@ -129,10 +129,12 @@ struct dataplane_context {
   uint32_t act_tail;
   struct polled_vm polled_vms[FLEXNIC_PL_VMST_NUM];  
 
-   /********************************************************/
+  /********************************************************/
   /* group resource budget */
   int counters_total;
   int vm_counters[FLEXNIC_PL_VMST_NUM];
+  uint16_t budget_active_num;
+  uint16_t budget_active_vms[FLEXNIC_PL_VMST_NUM];
   struct vm_budget budgets[FLEXNIC_PL_VMST_NUM];
 
   /********************************************************/
@@ -182,6 +184,19 @@ struct dataplane_context {
 };
 
 extern struct dataplane_context **ctxs;
+
+static inline void dataplane_budget_account(struct dataplane_context *ctx,
+    uint16_t vmid, uint32_t amount)
+{
+  if (amount == 0)
+    return;
+
+  if (ctx->vm_counters[vmid] == 0)
+    ctx->budget_active_vms[ctx->budget_active_num++] = vmid;
+
+  ctx->vm_counters[vmid] += amount;
+  ctx->counters_total += amount;
+}
 
 int dataplane_init(void);
 int dataplane_context_init(struct dataplane_context *ctx);
