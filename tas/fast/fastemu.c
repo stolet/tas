@@ -150,6 +150,7 @@ void dataplane_loop(struct dataplane_context *ctx)
   struct notify_blockstate nbs;
   uint32_t ts;
   uint64_t cyc, prev_cyc;
+  unsigned rx_n, qm_n, qs_n;
   int was_idle = 1;
 
   notify_canblock_reset(&nbs);
@@ -166,19 +167,28 @@ void dataplane_loop(struct dataplane_context *ctx)
     ts = tas_qman_timestamp(cyc);
 
     STATS_TS(start);
-    n += poll_rx(ctx, ts, cyc);
+    rx_n = poll_rx(ctx, ts, cyc);
+    n += rx_n;
     STATS_TS(rx);
     tx_flush(ctx);
 
     n += poll_qman_fwd(ctx, ts);
 
     STATS_TSADD(ctx, cyc_rx, rx - start);
-    n += poll_qman(ctx, ts);
+    if (rx_n != 0)
+      STATS_TSADD(ctx, cycw_rx, rx - start);
+    qm_n = poll_qman(ctx, ts);
+    n += qm_n;
     STATS_TS(qm);
     STATS_TSADD(ctx, cyc_qm, qm - rx);
-    n += poll_queues(ctx, ts);
+    if (qm_n != 0)
+      STATS_TSADD(ctx, cycw_qm, qm - rx);
+    qs_n = poll_queues(ctx, ts);
+    n += qs_n;
     STATS_TS(qs);
     STATS_TSADD(ctx, cyc_qs, qs - qm);
+    if (qs_n != 0)
+      STATS_TSADD(ctx, cycw_qs, qs - qm);
     n += poll_kernel(ctx, ts);
 
     /* flush transmit buffer */
@@ -242,20 +252,30 @@ void dataplane_dump_stats(void)
 
   for (i = 0; i < fp_cores_max; i++) {
     ctx = ctxs[i];
-    fprintf(stderr, "dp stats %u: "
+    if (ctx == NULL)
+      continue;
+    printf("dp stats %u: "
         "qm=(%"PRIu64",%"PRIu64",%"PRIu64")  "
         "rx=(%"PRIu64",%"PRIu64",%"PRIu64")  "
-        "qs=(%"PRIu64",%"PRIu64",%"PRIu64")  "
-        "cyc=(%"PRIu64",%"PRIu64",%"PRIu64",%"PRIu64")\n", i,
+        "qs=(%"PRIu64",%"PRIu64",%"PRIu64")\n", i,
         read_stat(&ctx->stat_qm_poll), read_stat(&ctx->stat_qm_empty),
         read_stat(&ctx->stat_qm_total),
         read_stat(&ctx->stat_rx_poll), read_stat(&ctx->stat_rx_empty),
         read_stat(&ctx->stat_rx_total),
         read_stat(&ctx->stat_qs_poll), read_stat(&ctx->stat_qs_empty),
-        read_stat(&ctx->stat_qs_total),
+        read_stat(&ctx->stat_qs_total));
+    printf("dp stats %u: "
+        "cyc=(%"PRIu64",%"PRIu64",%"PRIu64",%"PRIu64")  "
+        "cycw=(%"PRIu64",%"PRIu64",%"PRIu64",%"PRIu64")\n", i,
         read_stat(&ctx->stat_cyc_db), read_stat(&ctx->stat_cyc_qm),
-        read_stat(&ctx->stat_cyc_rx), read_stat(&ctx->stat_cyc_qs));
+        read_stat(&ctx->stat_cyc_rx), read_stat(&ctx->stat_cyc_qs),
+        read_stat(&ctx->stat_cycw_db), read_stat(&ctx->stat_cycw_qm),
+        read_stat(&ctx->stat_cycw_rx), read_stat(&ctx->stat_cycw_qs));
   }
+}
+#else
+void dataplane_dump_stats(void)
+{
 }
 #endif
 
@@ -310,7 +330,7 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
     STATS_ADD(ctx, rx_empty, 1);
     return 0;
   }
-  STATS_ADD(ctx, rx_total, n);
+  STATS_ADD(ctx, rx_total, ret);
   BATCH_STATS_ADD(ctx, rx_total, ret);
   n = ret;
 
@@ -408,7 +428,7 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
   STATS_ADD(ctx, qs_total, total);
   BATCH_STATS_ADD(ctx, qs_total, total);
   if (total == 0)
-    STATS_ADD(ctx, qs_empty, total);
+    STATS_ADD(ctx, qs_empty, 1);
 
   return total;
 }

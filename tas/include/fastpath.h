@@ -136,6 +136,11 @@ struct dataplane_context {
   uint64_t stat_cyc_qm;
   uint64_t stat_cyc_rx;
   uint64_t stat_cyc_qs;
+
+  uint64_t stat_cycw_db;
+  uint64_t stat_cycw_qm;
+  uint64_t stat_cycw_rx;
+  uint64_t stat_cycw_qs;
 #endif
 };
 
@@ -154,8 +159,6 @@ static inline void dataplane_batch_stats_collect(
   (void) stats;
 }
 #endif
-#ifdef DATAPLANE_STATS
 void dataplane_dump_stats(void);
-#endif
 
 #endif /* ndef FASTPATH_H_ */

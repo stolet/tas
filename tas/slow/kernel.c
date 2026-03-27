@@ -181,6 +181,8 @@ int slowpath_main(void)
             kstats.acks);
 #endif
         fflush(stdout);
+        dataplane_dump_stats();
+        fflush(stdout);
       }
       last_print = cur_ts;
     }
