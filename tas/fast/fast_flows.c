@@ -267,12 +267,14 @@ int fast_flows_qman_fwd(struct dataplane_context *ctx,
 
 void fast_flows_packet_parse(struct dataplane_context *ctx,
     struct network_buf_handle **nbhs, void **fss, struct tcp_opts *tos,
-    uint16_t n)
+    uint64_t *cycles, uint16_t n)
 {
   struct pkt_tcp *p;
   uint16_t i, len;
-
+  uint64_t start, end;
+  
   for (i = 0; i < n; i++) {
+    start = util_rdtsc();
     if (fss[i] == NULL)
       continue;
 
@@ -292,6 +294,8 @@ void fast_flows_packet_parse(struct dataplane_context *ctx,
 
     if (cond)
       fss[i] = NULL;
+    end = util_rdtsc();
+    cycles[i] += end - start;
   }
 }
 
@@ -351,7 +355,7 @@ void fast_flows_packet_pfbufs(struct dataplane_context *ctx,
 /* Received packet */
 int fast_flows_packet(struct dataplane_context *ctx,
     struct network_buf_handle *nbh, void *fsp, struct tcp_opts *opts,
-    int spend_budget, uint32_t ts)
+    uint32_t ts)
 {
   struct pkt_tcp *p = network_buf_bufoff(nbh);
   struct flextcp_pl_flowst *fs = fsp;
@@ -377,19 +381,6 @@ int fast_flows_packet(struct dataplane_context *ctx,
       f_beui32(p->ip.src), f_beui16(p->tcp.src), f_beui32(p->tcp.seqno),
       f_beui32(p->tcp.ackno), TCPH_FLAGS(&p->tcp), payload_bytes);
 #endif
-
-  if (spend_budget) {
-    dataplane_budget_account(ctx, fs->vm_id, payload_bytes);
-#ifdef BUDGET_DEBUG_STATS
-  } else {
-    ctx->budget_debug_work_conserving_vm[fs->vm_id] += payload_bytes;
-    ctx->budget_debug_work_conserving_total += payload_bytes;
-#endif
-  }
-
-  if (spend_budget && !dataplane_budget_available(ctx, fs->vm_id)) {
-    return 0;
-  }
 
   fs_lock(fs);
 
@@ -736,7 +727,7 @@ slowpath:
 /* Received packet */
 int fast_flows_packet_gre(struct dataplane_context *ctx,
     struct network_buf_handle *nbh, void *fsp, struct tcp_opts *opts,
-    int spend_budget, uint32_t ts)
+    uint32_t ts)
 {
   struct pkt_gre *p = network_buf_bufoff(nbh);
   struct flextcp_pl_flowst *fs = fsp;
@@ -762,19 +753,6 @@ int fast_flows_packet_gre(struct dataplane_context *ctx,
       f_beui32(p->in_ip.src), f_beui16(p->tcp.src), f_beui32(p->tcp.seqno),
       f_beui32(p->tcp.ackno), TCPH_FLAGS(&p->tcp), payload_bytes);
 #endif
-
-  if (spend_budget) {
-    dataplane_budget_account(ctx, fs->vm_id, payload_bytes);
-#ifdef BUDGET_DEBUG_STATS
-  } else {
-    ctx->budget_debug_work_conserving_vm[fs->vm_id] += payload_bytes;
-    ctx->budget_debug_work_conserving_total += payload_bytes;
-#endif
-  }
-
-  if (spend_budget && !dataplane_budget_available(ctx, fs->vm_id)) {
-    return 0;
-  }
 
   fs_lock(fs);
 
@@ -1848,11 +1826,13 @@ static inline uint32_t flow_hash_gre(struct flow_key_gre *k)
 }
 
 void fast_flows_packet_fss(struct dataplane_context *ctx,
-    struct network_buf_handle **nbhs, void **fss, uint16_t n)
+    struct network_buf_handle **nbhs, void **fss, 
+    uint64_t *cycles, uint8_t *drop, uint8_t *has_funded, uint16_t n)
 {
   uint32_t hashes[n];
   uint32_t h, k, j, eh, fid, ffid;
   uint16_t i;
+  uint64_t start, end;
   struct pkt_tcp *p;
   struct flow_key key;
   struct flextcp_pl_flowhte *e;
@@ -1876,6 +1856,7 @@ void fast_flows_packet_fss(struct dataplane_context *ctx,
   /* prefetch flow state for buckets with matching hashes
    * (usually 1 per packet, except in case of collisions) */
   for (i = 0; i < n; i++) {
+    start = util_rdtsc();
     h = hashes[i];
     for (j = 0; j < FLEXNIC_PL_FLOWHT_NBSZ; j++) {
       k = (h + j) % FLEXNIC_PL_FLOWHT_ENTRIES;
@@ -1892,10 +1873,13 @@ void fast_flows_packet_fss(struct dataplane_context *ctx,
 
       rte_prefetch0(&fp_state->flowst[fid]);
     }
+    end = util_rdtsc();
+    cycles[i] += end - start;
   }
 
   /* finish hash table lookup by checking 5-tuple in flow state */
   for (i = 0; i < n; i++) {
+    start = util_rdtsc();
     p = network_buf_bufoff(nbhs[i]);
     fss[i] = NULL;
     h = hashes[i];
@@ -1922,9 +1906,15 @@ void fast_flows_packet_fss(struct dataplane_context *ctx,
       {
         rte_prefetch0((uint8_t *) fs + 64);
         fss[i] = &fp_state->flowst[fid];
+        if (dataplane_budget_available(ctx, fs->vm_id))
+          *has_funded = 1;
+        else
+          drop[i] = 1;
         break;
       }
     }
+    end = util_rdtsc();
+    cycles[i] += end - start;
   }
 }
 
