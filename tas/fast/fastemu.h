@@ -73,17 +73,18 @@ int fast_flows_qman_fwd(struct dataplane_context *ctx,
     struct flextcp_pl_flowst *fs);
 int fast_flows_packet(struct dataplane_context *ctx,
     struct network_buf_handle *nbh, void *fsp, struct tcp_opts *opts,
-    int spend_budget, uint32_t ts);
+    uint32_t ts);
 int fast_flows_packet_gre(struct dataplane_context *ctx,
     struct network_buf_handle *nbh, void *fs, struct tcp_opts *opts,
-    int spend_budget, uint32_t ts);
+    uint32_t ts);
 void fast_flows_packet_fss(struct dataplane_context *ctx,
-    struct network_buf_handle **nbhs, void **fss, uint16_t n);
+    struct network_buf_handle **nbhs, void **fss, 
+    uint64_t *cycles, uint8_t *drop, uint8_t *has_funded, uint16_t n);
 void fast_flows_packet_fss_gre(struct dataplane_context *ctx,
     struct network_buf_handle **nbhs, void **fss, uint16_t n);
 void fast_flows_packet_parse(struct dataplane_context *ctx,
     struct network_buf_handle **nbhs, void **fss, struct tcp_opts *tos,
-    uint16_t n);
+    uint64_t *cycles, uint16_t n);
 void fast_flows_packet_parse_gre(struct dataplane_context *ctx,
     struct network_buf_handle **nbhs, void **fss, struct tcp_opts *tos,
     uint16_t n);

@@ -254,10 +254,10 @@ void dataplane_loop(struct dataplane_context *ctx)
 
     STATS_TS(start);
   
-    s_cycs = util_rdtsc();
+    // s_cycs = util_rdtsc();
     n += poll_rx(ctx, ts, cyc);
-    e_cycs = util_rdtsc();
-    spend_budget(ctx, e_cycs - s_cycs);
+    // e_cycs = util_rdtsc();
+    // spend_budget(ctx, e_cycs - s_cycs);
 
     STATS_TS(rx);
     tx_flush(ctx);
@@ -266,26 +266,26 @@ void dataplane_loop(struct dataplane_context *ctx)
 
     STATS_TSADD(ctx, cyc_rx, rx - start);
    
-    s_cycs = util_rdtsc();
+    // s_cycs = util_rdtsc();
     n += poll_qman(ctx, ts);
-    e_cycs = util_rdtsc();
-    spend_budget(ctx, e_cycs - s_cycs);
+    // e_cycs = util_rdtsc();
+    // spend_budget(ctx, e_cycs - s_cycs);
    
     STATS_TS(qm);
     STATS_TSADD(ctx, cyc_qm, qm - rx);
    
-    s_cycs = util_rdtsc();
+    // s_cycs = util_rdtsc();
     n += poll_queues(ctx, ts);
-    e_cycs = util_rdtsc();
-    spend_budget(ctx, e_cycs - s_cycs);
+    // e_cycs = util_rdtsc();
+    // spend_budget(ctx, e_cycs - s_cycs);
   
     STATS_TS(qs);
     STATS_TSADD(ctx, cyc_qs, qs - qm);
   
-    s_cycs = util_rdtsc();
+    // s_cycs = util_rdtsc();
     n += poll_kernel(ctx, ts);
-    e_cycs = util_rdtsc();
-    spend_budget(ctx, e_cycs - s_cycs);
+    // e_cycs = util_rdtsc();
+    // spend_budget(ctx, e_cycs - s_cycs);
 
     /* flush transmit buffer */
     tx_flush(ctx);
@@ -406,10 +406,12 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
 {
   int ret;
   unsigned i, n;
-  uint8_t batch_has_budgeted_vm = 0;
+  
+  uint8_t has_funded = 0;
   uint8_t freebuf[BATCH_SIZE] = {0};
-  uint8_t rx_drop[BATCH_SIZE] = {0};
-  uint8_t rx_spend_budget[BATCH_SIZE] = {0};
+  uint8_t drop[BATCH_SIZE] = {0};
+  uint64_t cycles[BATCH_SIZE] = {0};
+  uint64_t start, end;
   void *fss[BATCH_SIZE];
   struct tcp_opts tcpopts[BATCH_SIZE];
   struct network_buf_handle *bhs[BATCH_SIZE];
@@ -444,31 +446,8 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
   #if VIRTUOSO_GRE
     fast_flows_packet_fss_gre(ctx, bhs, fss, n);
   #else
-    fast_flows_packet_fss(ctx, bhs, fss, n);
+    fast_flows_packet_fss(ctx, bhs, fss, cycles, drop, &has_funded, n);
   #endif
-
-  for (i = 0; i < n; i++)
-  {
-    if (fss[i] == NULL) {
-      continue;
-    }
-
-    fs = fss[i];
-    if (dataplane_budget_available(ctx, fs->vm_id)) {
-      rx_spend_budget[i] = 1;
-      batch_has_budgeted_vm = 1;
-    }
-  }
-
-  if (batch_has_budgeted_vm) {
-    for (i = 0; i < n; i++)
-    {
-      if (fss[i] != NULL && rx_spend_budget[i] == 0) {
-        rx_drop[i] = 1;
-        fss[i] = NULL;
-      }
-    }
-  }
 
   /* prefetch packet contents (2nd cache line, TS opt overlaps) */
   for (i = 0; i < n; i++)
@@ -480,23 +459,23 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
   #if VIRTUOSO_GRE
     fast_flows_packet_parse_gre(ctx, bhs, fss, tcpopts, n);
   #else
-    fast_flows_packet_parse(ctx, bhs, fss, tcpopts, n);
+    fast_flows_packet_parse(ctx, bhs, fss, tcpopts, cycles, n);
   #endif
 
   for (i = 0; i < n; i++)
   {
-    if (rx_drop[i]) {
+    start = util_rdtsc();
+    /* run fast-path for flows with flow state */
+    if (fss[i] != NULL && (has_funded && drop[i]))
+    {
       ret = 0;
     }
-    /* run fast-path for flows with flow state */
     else if (fss[i] != NULL)
     {
       #if VIRTUOSO_GRE
-        ret = fast_flows_packet_gre(ctx, bhs[i], fss[i], &tcpopts[i],
-            rx_spend_budget[i], ts);
+        ret = fast_flows_packet_gre(ctx, bhs[i], fss[i], &tcpopts[i], ts);
       #else
-        ret = fast_flows_packet(ctx, bhs[i], fss[i], &tcpopts[i],
-            rx_spend_budget[i], ts);
+        ret = fast_flows_packet(ctx, bhs[i], fss[i], &tcpopts[i], ts);
       #endif
     }
     else
@@ -512,6 +491,8 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
     {
       fast_kernel_packet(ctx, bhs[i], fss[i]);
     }
+    end = util_rdtsc();
+    cycles[i] += end - start;
   }
 
   arx_cache_flush(ctx, tsc);
@@ -519,8 +500,36 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
   /* free received buffers */
   for (i = 0; i < n; i++)
   {
+    start = util_rdtsc();
     if (freebuf[i] == 0)
       bufcache_free(ctx, bhs[i]);
+    end = util_rdtsc();
+    cycles[i] += end - start;
+  }
+  
+  #ifdef BUDGET_DEBUG_STATS
+    for (i = 0; i < n; i++)
+    {
+      if (fss[i] != NULL && drop[i] && !has_funded)
+      {
+        fs = fss[i];
+        ctx->budget_debug_work_conserving_vm[fs->vm_id] += cycles[i];
+        ctx->budget_debug_work_conserving_total += cycles[i];
+      }
+    }
+  #endif
+  
+  if (!has_funded)
+    return n;
+  
+  /* deduct budgets */
+  for (i = 0; i < n; i++)
+  {
+    if (fss[i] != NULL)
+    {
+      fs = fss[i];
+      dataplane_budget_consume(ctx, fs->vm_id, cycles[i]);
+    }
   }
 
   return n;
@@ -830,6 +839,8 @@ static unsigned poll_qman(struct dataplane_context *ctx, uint32_t ts)
   unsigned fq_ids[BATCH_SIZE];
   unsigned vq_ids[BATCH_SIZE];
   uint16_t q_bytes[BATCH_SIZE];
+  uint64_t cycles[BATCH_SIZE] = {0};
+  uint64_t start, end;
   struct network_buf_handle **handles;
   uint16_t off = 0, max;
   int ret, i, use;
@@ -845,7 +856,7 @@ static unsigned poll_qman(struct dataplane_context *ctx, uint32_t ts)
   max = bufcache_prealloc(ctx, max, &handles);
 
   /* poll queue manager */
-  ret = tas_qman_poll(ctx, max, vq_ids, fq_ids, q_bytes);
+  ret = tas_qman_poll(ctx, max, vq_ids, fq_ids, q_bytes, cycles);
 
   if (ret <= 0)
   {
@@ -1076,170 +1087,170 @@ static void arx_cache_flush(struct dataplane_context *ctx, uint64_t tsc)
   ctx->arx_num = 0;
 }
 
-static void spend_budget_slow(struct dataplane_context *ctx, uint64_t cycles)
-{
-  int vmid;
-  uint16_t vm_count, vm_idx, active_vm_count;
-  uint16_t *vm_ids;
-  double counter, ratio;
-  uint64_t vm_cycles;
-#ifdef BUDGET_DEBUG_STATS
-  double wc_counter, wc_ratio;
-  double wc_counters_sum = 0;
-#endif
+// static void spend_budget_slow(struct dataplane_context *ctx, uint64_t cycles)
+// {
+//   int vmid;
+//   uint16_t vm_count, vm_idx, active_vm_count;
+//   uint16_t *vm_ids;
+//   double counter, ratio;
+//   uint64_t vm_cycles;
+// #ifdef BUDGET_DEBUG_STATS
+//   double wc_counter, wc_ratio;
+//   double wc_counters_sum = 0;
+// #endif
 
-#ifdef BUDGET_DEBUG_STATS
-  if (ctx->counters_total == 0 && ctx->budget_debug_work_conserving_total != 0)
-  {
-    vm_count = tas_registered_vm_count_get();
-    if (vm_count == 0)
-    {
-      for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++)
-      {
-        ctx->budget_debug_work_conserving_vm[vmid] = 0;
-      }
-      ctx->budget_debug_work_conserving_total = 0;
-      return;
-    }
+// #ifdef BUDGET_DEBUG_STATS
+//   if (ctx->counters_total == 0 && ctx->budget_debug_work_conserving_total != 0)
+//   {
+//     vm_count = tas_registered_vm_count_get();
+//     if (vm_count == 0)
+//     {
+//       for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++)
+//       {
+//         ctx->budget_debug_work_conserving_vm[vmid] = 0;
+//       }
+//       ctx->budget_debug_work_conserving_total = 0;
+//       return;
+//     }
 
-    for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
-    {
-      vmid = tas_registered_vm_ids[vm_idx];
-      wc_counter = ctx->budget_debug_work_conserving_vm[vmid];
-      wc_counters_sum += wc_counter;
-      wc_ratio = wc_counter / ctx->budget_debug_work_conserving_total;
-      vm_cycles = cycles * wc_ratio;
-      __sync_fetch_and_add(&ctx->budget_debug_work_conserving_cycles[vmid],
-          vm_cycles);
-      ctx->budget_debug_work_conserving_vm[vmid] = 0;
-    }
+//     for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
+//     {
+//       vmid = tas_registered_vm_ids[vm_idx];
+//       wc_counter = ctx->budget_debug_work_conserving_vm[vmid];
+//       wc_counters_sum += wc_counter;
+//       wc_ratio = wc_counter / ctx->budget_debug_work_conserving_total;
+//       vm_cycles = cycles * wc_ratio;
+//       __sync_fetch_and_add(&ctx->budget_debug_work_conserving_cycles[vmid],
+//           vm_cycles);
+//       ctx->budget_debug_work_conserving_vm[vmid] = 0;
+//     }
 
-    ctx->budget_debug_work_conserving_total = 0;
-    return;
-  }
-#endif
+//     ctx->budget_debug_work_conserving_total = 0;
+//     return;
+//   }
+// #endif
 
-  if (ctx->counters_total == 0)
-    return;
+//   if (ctx->counters_total == 0)
+//     return;
 
-  active_vm_count = ctx->budget_active_num;
+//   active_vm_count = ctx->budget_active_num;
 
-  vm_count = tas_registered_vm_count_get();
-  if (vm_count == 0)
-  {
-    if (active_vm_count == 0)
-      active_vm_count = FLEXNIC_PL_VMST_NUM;
+//   vm_count = tas_registered_vm_count_get();
+//   if (vm_count == 0)
+//   {
+//     if (active_vm_count == 0)
+//       active_vm_count = FLEXNIC_PL_VMST_NUM;
 
-    for (vm_idx = 0; vm_idx < active_vm_count; vm_idx++)
-    {
-      vmid = (ctx->budget_active_num == 0) ? vm_idx : ctx->budget_active_vms[vm_idx];
-      ctx->vm_counters[vmid] = 0;
-    }
-    ctx->budget_active_num = 0;
-    ctx->counters_total = 0;
-    return;
-  }
+//     for (vm_idx = 0; vm_idx < active_vm_count; vm_idx++)
+//     {
+//       vmid = (ctx->budget_active_num == 0) ? vm_idx : ctx->budget_active_vms[vm_idx];
+//       ctx->vm_counters[vmid] = 0;
+//     }
+//     ctx->budget_active_num = 0;
+//     ctx->counters_total = 0;
+//     return;
+//   }
 
-  if (active_vm_count == 0)
-  {
-    active_vm_count = vm_count;
-    vm_ids = tas_registered_vm_ids;
-  } else
-  {
-    vm_ids = ctx->budget_active_vms;
-  }
+//   if (active_vm_count == 0)
+//   {
+//     active_vm_count = vm_count;
+//     vm_ids = tas_registered_vm_ids;
+//   } else
+//   {
+//     vm_ids = ctx->budget_active_vms;
+//   }
 
-  for (vm_idx = 0; vm_idx < active_vm_count; vm_idx++)
-  {
-    vmid = vm_ids[vm_idx];
-    counter = ctx->vm_counters[vmid];
-    ratio = counter / ctx->counters_total;
-    vm_cycles = cycles * ratio;
-    dataplane_budget_consume(ctx, vmid, vm_cycles);
-#ifdef BUDGET_DEBUG_STATS
-    __atomic_fetch_add(&ctx->budget_debug_consumed_total, vm_cycles,
-        __ATOMIC_RELAXED);
-    __atomic_fetch_add(&ctx->budget_debug_consumed_vm[vmid], vm_cycles,
-        __ATOMIC_RELAXED);
-#endif
-    ctx->vm_counters[vmid] = 0;
-  }
+//   for (vm_idx = 0; vm_idx < active_vm_count; vm_idx++)
+//   {
+//     vmid = vm_ids[vm_idx];
+//     counter = ctx->vm_counters[vmid];
+//     ratio = counter / ctx->counters_total;
+//     vm_cycles = cycles * ratio;
+//     dataplane_budget_consume(ctx, vmid, vm_cycles);
+// #ifdef BUDGET_DEBUG_STATS
+//     __atomic_fetch_add(&ctx->budget_debug_consumed_total, vm_cycles,
+//         __ATOMIC_RELAXED);
+//     __atomic_fetch_add(&ctx->budget_debug_consumed_vm[vmid], vm_cycles,
+//         __ATOMIC_RELAXED);
+// #endif
+//     ctx->vm_counters[vmid] = 0;
+//   }
 
-  ctx->budget_active_num = 0;
-  ctx->counters_total = 0;
-#ifdef BUDGET_DEBUG_STATS
-  if (ctx->budget_debug_work_conserving_total != 0)
-  {
-    for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
-    {
-      vmid = tas_registered_vm_ids[vm_idx];
-      ctx->budget_debug_work_conserving_vm[vmid] = 0;
-    }
-    ctx->budget_debug_work_conserving_total = 0;
-  }
-#endif
-}
+//   ctx->budget_active_num = 0;
+//   ctx->counters_total = 0;
+// #ifdef BUDGET_DEBUG_STATS
+//   if (ctx->budget_debug_work_conserving_total != 0)
+//   {
+//     for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
+//     {
+//       vmid = tas_registered_vm_ids[vm_idx];
+//       ctx->budget_debug_work_conserving_vm[vmid] = 0;
+//     }
+//     ctx->budget_debug_work_conserving_total = 0;
+//   }
+// #endif
+// }
 
-static void spend_budget(struct dataplane_context *ctx, uint64_t cycles)
-{
-  uint16_t active_vm_count, vm_idx;
-  uint16_t *vm_ids;
-  uint16_t vmid;
-  uint32_t total;
-  double scale;
-  uint64_t vm_cycles;
-#ifdef BUDGET_DEBUG_STATS
-  uint16_t vm_count;
-#endif
+// static void spend_budget(struct dataplane_context *ctx, uint64_t cycles)
+// {
+//   uint16_t active_vm_count, vm_idx;
+//   uint16_t *vm_ids;
+//   uint16_t vmid;
+//   uint32_t total;
+//   double scale;
+//   uint64_t vm_cycles;
+// #ifdef BUDGET_DEBUG_STATS
+//   uint16_t vm_count;
+// #endif
 
-#ifdef BUDGET_DEBUG_STATS
-  if (ctx->counters_total == 0 && ctx->budget_debug_work_conserving_total != 0)
-  {
-    spend_budget_slow(ctx, cycles);
-    return;
-  }
-#endif
+// #ifdef BUDGET_DEBUG_STATS
+//   if (ctx->counters_total == 0 && ctx->budget_debug_work_conserving_total != 0)
+//   {
+//     spend_budget_slow(ctx, cycles);
+//     return;
+//   }
+// #endif
 
-  total = ctx->counters_total;
-  if (total == 0)
-    return;
+//   total = ctx->counters_total;
+//   if (total == 0)
+//     return;
 
-  active_vm_count = ctx->budget_active_num;
-  if (__builtin_expect(active_vm_count == 0, 0))
-  {
-    spend_budget_slow(ctx, cycles);
-    return;
-  }
+//   active_vm_count = ctx->budget_active_num;
+//   if (__builtin_expect(active_vm_count == 0, 0))
+//   {
+//     spend_budget_slow(ctx, cycles);
+//     return;
+//   }
 
-  vm_ids = ctx->budget_active_vms;
-  scale = (double) cycles / (double) total;
+//   vm_ids = ctx->budget_active_vms;
+//   scale = (double) cycles / (double) total;
 
-  for (vm_idx = 0; vm_idx < active_vm_count; vm_idx++)
-  {
-    vmid = vm_ids[vm_idx];
-    vm_cycles = (uint64_t) ((double) ctx->vm_counters[vmid] * scale);
-    dataplane_budget_consume(ctx, vmid, vm_cycles);
-#ifdef BUDGET_DEBUG_STATS
-    __atomic_fetch_add(&ctx->budget_debug_consumed_total, vm_cycles,
-        __ATOMIC_RELAXED);
-    __atomic_fetch_add(&ctx->budget_debug_consumed_vm[vmid], vm_cycles,
-        __ATOMIC_RELAXED);
-#endif
-    ctx->vm_counters[vmid] = 0;
-  }
+//   for (vm_idx = 0; vm_idx < active_vm_count; vm_idx++)
+//   {
+//     vmid = vm_ids[vm_idx];
+//     vm_cycles = (uint64_t) ((double) ctx->vm_counters[vmid] * scale);
+//     dataplane_budget_consume(ctx, vmid, vm_cycles);
+// #ifdef BUDGET_DEBUG_STATS
+//     __atomic_fetch_add(&ctx->budget_debug_consumed_total, vm_cycles,
+//         __ATOMIC_RELAXED);
+//     __atomic_fetch_add(&ctx->budget_debug_consumed_vm[vmid], vm_cycles,
+//         __ATOMIC_RELAXED);
+// #endif
+//     ctx->vm_counters[vmid] = 0;
+//   }
 
-  ctx->budget_active_num = 0;
-  ctx->counters_total = 0;
-#ifdef BUDGET_DEBUG_STATS
-  if (ctx->budget_debug_work_conserving_total != 0)
-  {
-    vm_count = tas_registered_vm_count_get();
-    for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
-    {
-      vmid = tas_registered_vm_ids[vm_idx];
-      ctx->budget_debug_work_conserving_vm[vmid] = 0;
-    }
-    ctx->budget_debug_work_conserving_total = 0;
-  }
-#endif
-}
+//   ctx->budget_active_num = 0;
+//   ctx->counters_total = 0;
+// #ifdef BUDGET_DEBUG_STATS
+//   if (ctx->budget_debug_work_conserving_total != 0)
+//   {
+//     vm_count = tas_registered_vm_count_get();
+//     for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
+//     {
+//       vmid = tas_registered_vm_ids[vm_idx];
+//       ctx->budget_debug_work_conserving_vm[vmid] = 0;
+//     }
+//     ctx->budget_debug_work_conserving_total = 0;
+//   }
+// #endif
+// }
