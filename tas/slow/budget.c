@@ -82,7 +82,7 @@ void budget_update(uint64_t cur_tsc)
   budget_ts = cur_tsc;
 
   total_budget = config.bu_boost * (cur_tsc - last_bu_update_ts);
-  vm_count = tas_registered_vm_count_get();
+  vm_count = tas_reg_nvm_get();
 #ifdef BUDGET_DEBUG_STATS
   now_us = util_timeout_time_us();
 #endif
@@ -92,7 +92,7 @@ void budget_update(uint64_t cur_tsc)
     budget_debug_window_clear_core_distributions(&budget_debug_window,
         budget_threads_launched);
     budget_debug_window_maybe_print(&budget_debug_window, stderr, now_us,
-        budget_threads_launched, tas_registered_vm_ids, vm_count);
+        budget_threads_launched, tas_reg_vm_ids, vm_count);
 #endif
     last_bu_update_ts = cur_tsc;
     return;
@@ -104,18 +104,18 @@ void budget_update(uint64_t cur_tsc)
   for (ctxid = 0; ctxid < budget_threads_launched; ctxid++) {
     tas_budget_debug_snapshot_core(ctxid, &debug_snapshot);
     budget_debug_record_core_interval(&budget_debug_window, ctxid,
-        &debug_snapshot, tas_registered_vm_ids, vm_count,
+        &debug_snapshot, tas_reg_vm_ids, vm_count,
         config.bu_max_budget, cur_tsc - last_bu_update_ts);
   }
 #endif
 
   for (vm_idx = 0; vm_idx < vm_count; vm_idx++) {
-    vmid = tas_registered_vm_ids[vm_idx];
+    vmid = tas_reg_vm_ids[vm_idx];
     weights_sum += vm_weights[vmid];
   }
 
   for (vm_idx = 0; vm_idx < vm_count; vm_idx++) {
-    vmid = tas_registered_vm_ids[vm_idx];
+    vmid = tas_reg_vm_ids[vm_idx];
     incr = ((total_budget * vm_weights[vmid]) / weights_sum) *
         budget_threads_launched;
 
@@ -159,7 +159,7 @@ void budget_update(uint64_t cur_tsc)
   }
 
   budget_debug_window_maybe_print(&budget_debug_window, stderr, now_us,
-      budget_threads_launched, tas_registered_vm_ids, vm_count);
+      budget_threads_launched, tas_reg_vm_ids, vm_count);
 #endif
 
   last_bu_update_ts = cur_tsc;

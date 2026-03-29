@@ -1104,15 +1104,16 @@ slowpath:
 }
 
 /* Update receive and transmit queue pointers from application */
-int fast_flows_bump(struct dataplane_context *ctx, uint32_t flow_id,
+int fast_flows_bump(struct dataplane_context *ctx, uint32_t flow_id, int *vmid,
     uint16_t bump_seq, uint32_t rx_bump, uint32_t tx_bump, uint8_t flags,
     struct network_buf_handle *nbh, uint32_t ts)
 {
   struct flextcp_pl_flowst *fs = &fp_state->flowst[flow_id];
   uint32_t rx_avail_prev, old_avail, new_avail, tx_avail;
   int ret = -1;
-
+  
   fs_lock(fs);
+  *vmid = fs->vm_id;
 #ifdef FLEXNIC_TRACING
   struct flextcp_pl_trev_atx te_atx = {
       .rx_bump = rx_bump,
@@ -1237,7 +1238,6 @@ void fast_flows_winretransmit(struct dataplane_context *ctx, uint32_t flow_id,
   struct flextcp_pl_flowst *fs = &fp_state->flowst[flow_id];
 
   fs_lock(fs);
-  dataplane_budget_account(ctx, fs->vm_id, 1);
   #if VIRTUOSO_GRE
     flow_tx_segment_gre(ctx, nbh, fs, fs->tx_next_seq, fs->rx_next_seq,
         fs->rx_avail, 0, 0, fs->tx_next_ts, ts, 0);
@@ -1256,7 +1256,6 @@ void fast_flows_retransmit(struct dataplane_context *ctx, uint32_t flow_id)
   uint32_t old_avail, new_avail = -1;
 
   fs_lock(fs);
-  dataplane_budget_account(ctx, fs->vm_id, 1);
 #ifdef FLEXNIC_TRACING
     struct flextcp_pl_trev_rexmit te_rexmit = {
         .flow_id = flow_id,
@@ -1365,7 +1364,7 @@ static inline int flow_should_signal_ece(struct dataplane_context *ctx,
   }
 
   double threshold = (double) config.bu_max_budget * config.bu_ecn_thresh;
-  return (double) dataplane_budget_effective_read_relaxed(ctx, vm_id) <
+  return (double) budget_effective_read_relaxed(ctx, vm_id) <
       threshold;
 }
 
@@ -1906,7 +1905,7 @@ void fast_flows_packet_fss(struct dataplane_context *ctx,
       {
         rte_prefetch0((uint8_t *) fs + 64);
         fss[i] = &fp_state->flowst[fid];
-        if (dataplane_budget_available(ctx, fs->vm_id))
+        if (budget_available(ctx, fs->vm_id))
           *has_funded = 1;
         else
           drop[i] = 1;

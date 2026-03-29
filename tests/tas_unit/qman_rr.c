@@ -25,6 +25,8 @@ void test_qman_rr_base(void *arg)
   struct dataplane_context *ctx;
   uint16_t q_bytes[TEST_BATCH_SIZE];
   unsigned vm_ids[TEST_BATCH_SIZE], q_ids[TEST_BATCH_SIZE];
+  uint64_t cycles[TEST_BATCH_SIZE] = {0};
+  int cycles_n = 0;
 
   ret = rte_eal_init(3, arg);
   test_assert("rte_eal_init", ret > -1);
@@ -58,7 +60,7 @@ void test_qman_rr_base(void *arg)
   test_assert("qman_set set vm 2 check vm 2", avail == 64 * 4);
 
   num = TEST_BATCH_SIZE;
-  tas_qman_poll(ctx, num, vm_ids, q_ids, q_bytes);
+  tas_qman_poll(ctx, num, vm_ids, q_ids, q_bytes, cycles, &cycles_n);
   all_vm1 = (vm_ids[0] == 1) && (vm_ids[1] == 1) 
       && (vm_ids[2] == 1) && (vm_ids[3] == 1);
   avail = qman_vm_get_avail(ctx, 1);
@@ -72,7 +74,7 @@ void test_qman_rr_base(void *arg)
   memset(q_bytes, 0, sizeof(*q_bytes) * TEST_BATCH_SIZE);
 
   num = TEST_BATCH_SIZE;
-  tas_qman_poll(ctx, num, vm_ids, q_ids, q_bytes);
+  tas_qman_poll(ctx, num, vm_ids, q_ids, q_bytes, cycles, &cycles_n);
   all_vm2 = (vm_ids[0] == 2) && (vm_ids[1] == 2) 
       && (vm_ids[2] == 2) && (vm_ids[3] == 2);
   avail = qman_vm_get_avail(ctx, 1);
@@ -94,6 +96,8 @@ void test_qman_rr_full_loop(void *arg)
   uint16_t q_bytes[TEST_BATCH_SIZE];
   unsigned vm_ids[TEST_BATCH_SIZE], q_ids[TEST_BATCH_SIZE];
   unsigned num = TEST_BATCH_SIZE;
+  uint64_t cycles[TEST_BATCH_SIZE] = {0};
+  int cycles_n = 0;
 
   ret = rte_eal_init(3, arg);
   test_assert("rte_eal_init", ret > -1);
@@ -135,7 +139,7 @@ void test_qman_rr_full_loop(void *arg)
   test_assert("qman_set set vm 2 check vm 2", avail == 64 * 8);
   
   // Poll and expect vm 1
-  tas_qman_poll(ctx, num, vm_ids, q_ids, q_bytes);
+  tas_qman_poll(ctx, num, vm_ids, q_ids, q_bytes, cycles, &cycles_n);
   all_vm1 = (vm_ids[0] == 1) && (vm_ids[1] == 1) 
       && (vm_ids[2] == 1) && (vm_ids[3] == 1);
   avail = qman_vm_get_avail(ctx, 1);
@@ -149,7 +153,7 @@ void test_qman_rr_full_loop(void *arg)
   memset(q_bytes, 0, sizeof(*q_bytes) * TEST_BATCH_SIZE);
 
   // Poll and expect vm 2
-  tas_qman_poll(ctx, num, vm_ids, q_ids, q_bytes);
+  tas_qman_poll(ctx, num, vm_ids, q_ids, q_bytes, cycles, &cycles_n);
   all_vm2 = (vm_ids[0] == 2) && (vm_ids[1] == 2) 
       && (vm_ids[2] == 2) && (vm_ids[3] == 2);
   avail = qman_vm_get_avail(ctx, 1);
@@ -163,7 +167,7 @@ void test_qman_rr_full_loop(void *arg)
   memset(q_bytes, 0, sizeof(*q_bytes) * TEST_BATCH_SIZE);
 
   // Poll and expect vm 1 again
-  tas_qman_poll(ctx, num, vm_ids, q_ids, q_bytes);
+  tas_qman_poll(ctx, num, vm_ids, q_ids, q_bytes, cycles, &cycles_n);
   all_vm1 = (vm_ids[0] == 1) && (vm_ids[1] == 1) 
       && (vm_ids[2] == 1) && (vm_ids[3] == 1);
   avail = qman_vm_get_avail(ctx, 1);
@@ -177,7 +181,7 @@ void test_qman_rr_full_loop(void *arg)
   memset(q_bytes, 0, sizeof(*q_bytes) * TEST_BATCH_SIZE);
 
   // Poll and expect vm 2 again
-  tas_qman_poll(ctx, num, vm_ids, q_ids, q_bytes);
+  tas_qman_poll(ctx, num, vm_ids, q_ids, q_bytes, cycles, &cycles_n);
   all_vm2 = (vm_ids[0] == 2) && (vm_ids[1] == 2) 
       && (vm_ids[2] == 2) && (vm_ids[3] == 2);
   avail = qman_vm_get_avail(ctx, 1);
@@ -198,6 +202,8 @@ void test_qman_rr_mix_round(void *arg) {
   uint16_t q_bytes[TEST_BATCH_SIZE];
   unsigned vm_ids[TEST_BATCH_SIZE], q_ids[TEST_BATCH_SIZE];
   unsigned num = TEST_BATCH_SIZE;
+  uint64_t cycles[TEST_BATCH_SIZE] = {0};
+  int cycles_n = 0;
 
   ret = rte_eal_init(3, arg);
   test_assert("rte_eal_init", ret > -1);
@@ -234,7 +240,7 @@ void test_qman_rr_mix_round(void *arg) {
   test_assert("qman_set set vm 2 check vm 2", avail == 64 * 6);
   
   // Poll and expect vm 1 and 2
-  tas_qman_poll(ctx, num, vm_ids, q_ids, q_bytes);
+  tas_qman_poll(ctx, num, vm_ids, q_ids, q_bytes, cycles, &cycles_n);
   packs_exp = (vm_ids[0] == 1) && (vm_ids[1] == 1) 
       && (vm_ids[2] == 1) && (vm_ids[3] == 2);
   avail = qman_vm_get_avail(ctx, 1);
@@ -248,7 +254,7 @@ void test_qman_rr_mix_round(void *arg) {
   memset(q_bytes, 0, sizeof(*q_bytes) * TEST_BATCH_SIZE);
 
   // Poll and expect vm 2
-  tas_qman_poll(ctx, num, vm_ids, q_ids, q_bytes);
+  tas_qman_poll(ctx, num, vm_ids, q_ids, q_bytes, cycles, &cycles_n);
   packs_exp = (vm_ids[0] == 2) && (vm_ids[1] == 2) 
       && (vm_ids[2] == 2) && (vm_ids[3] == 2);
   avail = qman_vm_get_avail(ctx, 1);
@@ -262,7 +268,7 @@ void test_qman_rr_mix_round(void *arg) {
   memset(q_bytes, 0, sizeof(*q_bytes) * TEST_BATCH_SIZE);
 
   // Poll and expect vm 2 again
-  tas_qman_poll(ctx, num, vm_ids, q_ids, q_bytes);
+  tas_qman_poll(ctx, num, vm_ids, q_ids, q_bytes, cycles, &cycles_n);
   packs_exp = (vm_ids[0] == 2);
   avail = qman_vm_get_avail(ctx, 1);
   test_assert("qman_poll (3) poll vm 1 check avail vm 1", avail == 0);

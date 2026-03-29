@@ -56,12 +56,12 @@ struct configuration config;
 unsigned fp_cores_max;
 volatile unsigned fp_cores_cur = 1;
 volatile unsigned fp_scale_to = 0;
-_Atomic uint16_t tas_registered_vm_count = 0;
-uint16_t tas_registered_vm_ids[FLEXNIC_PL_VMST_NUM];
-_Atomic uint16_t tas_registered_ctx_counts[FLEXNIC_PL_VMST_NUM];
-uint16_t tas_registered_ctx_ids[FLEXNIC_PL_VMST_NUM][FLEXNIC_PL_APPCTX_NUM];
-_Atomic uint32_t tas_registered_topology_gen = 1;
-_Atomic uint16_t tas_registered_app_count = 0;
+_Atomic uint16_t tas_reg_nvm = 0;
+uint16_t tas_reg_vm_ids[FLEXNIC_PL_VMST_NUM];
+_Atomic uint16_t tas_reg_nctx[FLEXNIC_PL_VMST_NUM];
+uint16_t tas_reg_ctx_ids[FLEXNIC_PL_VMST_NUM][FLEXNIC_PL_APPCTX_NUM];
+_Atomic uint32_t tas_reg_topo_gen = 1;
+_Atomic uint16_t tas_reg_app_count = 0;
 
 static unsigned threads_launched = 0;
 int exited;
@@ -90,17 +90,17 @@ void tas_register_vm(uint16_t vmid)
     return;
   }
 
-  idx = atomic_load_explicit(&tas_registered_vm_count, memory_order_relaxed);
+  idx = atomic_load_explicit(&tas_reg_nvm, memory_order_relaxed);
   if (idx >= FLEXNIC_PL_VMST_NUM) {
     fprintf(stderr, "tas_register_vm: vm registration overflow (%u)\n", idx);
     abort();
   }
 
   tas_registered_vm_slots[vmid] = 1;
-  tas_registered_vm_ids[idx] = vmid;
-  atomic_store_explicit(&tas_registered_vm_count, idx + 1,
+  tas_reg_vm_ids[idx] = vmid;
+  atomic_store_explicit(&tas_reg_nvm, idx + 1,
       memory_order_release);
-  atomic_fetch_add_explicit(&tas_registered_topology_gen, 1,
+  atomic_fetch_add_explicit(&tas_reg_topo_gen, 1,
       memory_order_release);
 }
 
@@ -122,7 +122,7 @@ void tas_register_appctx(uint16_t vmid, uint16_t ctxid)
     return;
   }
 
-  idx = atomic_load_explicit(&tas_registered_ctx_counts[vmid],
+  idx = atomic_load_explicit(&tas_reg_nctx[vmid],
       memory_order_relaxed);
   if (idx >= FLEXNIC_PL_APPCTX_NUM) {
     fprintf(stderr,
@@ -132,16 +132,16 @@ void tas_register_appctx(uint16_t vmid, uint16_t ctxid)
   }
 
   tas_registered_ctx_slots[vmid][ctxid] = 1;
-  tas_registered_ctx_ids[vmid][idx] = ctxid;
-  atomic_store_explicit(&tas_registered_ctx_counts[vmid], idx + 1,
+  tas_reg_ctx_ids[vmid][idx] = ctxid;
+  atomic_store_explicit(&tas_reg_nctx[vmid], idx + 1,
       memory_order_release);
-  atomic_fetch_add_explicit(&tas_registered_topology_gen, 1,
+  atomic_fetch_add_explicit(&tas_reg_topo_gen, 1,
       memory_order_release);
 }
 
 void tas_register_app(void)
 {
-  atomic_fetch_add_explicit(&tas_registered_app_count, 1,
+  atomic_fetch_add_explicit(&tas_reg_app_count, 1,
       memory_order_release);
 }
 
@@ -349,7 +349,7 @@ struct budget_statistics get_budget_stats(int vmid, int ctxid)
   struct budget_statistics stats;
 
   /* Get stats for this logging round */
-  stats.budget = dataplane_budget_effective_read_relaxed(ctxs[ctxid], vmid);
+  stats.budget = budget_effective_read_relaxed(ctxs[ctxid], vmid);
   stats.cycles_poll = vm_budget_cycles_read_relaxed(
       &ctxs[ctxid]->budgets[vmid].cycles_poll);
   stats.cycles_tx = vm_budget_cycles_read_relaxed(
@@ -370,22 +370,22 @@ void print_budget() {
   uint16_t vm_count, vm_idx;
   int vmid;
 
-  vm_count = tas_registered_vm_count_get();
+  vm_count = tas_reg_nvm_get();
   for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
   {
-    vmid = tas_registered_vm_ids[vm_idx];
+    vmid = tas_reg_vm_ids[vm_idx];
     for (int ctxid = 0; ctxid < threads_launched; ctxid++)
     {
       fprintf(stderr, "vmid=%d ctxid=%d budget=%ld\n",
           vmid, ctxid,
-          dataplane_budget_effective_read_relaxed(ctxs[ctxid], vmid));
+          budget_effective_read_relaxed(ctxs[ctxid], vmid));
     }
   }
 }
 
 uint64_t get_budget_delta(int vmid, int ctxid)
 {
-  int64_t budget = dataplane_budget_effective_read_relaxed(ctxs[ctxid], vmid);
+  int64_t budget = budget_effective_read_relaxed(ctxs[ctxid], vmid);
   if (budget >= config.bu_max_budget)
     return 0;
   return config.bu_max_budget - budget;
@@ -393,14 +393,14 @@ uint64_t get_budget_delta(int vmid, int ctxid)
 
 uint64_t tas_get_budget(int vmid, int ctxid)
 {
-  int64_t budget = dataplane_budget_effective_read_relaxed(ctxs[ctxid], vmid);
+  int64_t budget = budget_effective_read_relaxed(ctxs[ctxid], vmid);
   return budget > 0 ? budget : 0;
 }
 
 #ifdef BUDGET_DEBUG_STATS
 int64_t tas_get_budget_raw(int vmid, int ctxid)
 {
-  return dataplane_budget_effective_read_relaxed(ctxs[ctxid], vmid);
+  return budget_effective_read_relaxed(ctxs[ctxid], vmid);
 }
 
 void tas_budget_debug_snapshot_core(int ctxid,
@@ -415,7 +415,7 @@ void tas_budget_debug_snapshot_core(int ctxid,
     snapshot->consumed_vm[vmid] = __atomic_exchange_n(
         &ctx->budget_debug_consumed_vm[vmid], 0, __ATOMIC_RELAXED);
     snapshot->work_conserving_vm[vmid] = __atomic_exchange_n(
-        &ctx->budget_debug_work_conserving_cycles[vmid], 0, __ATOMIC_RELAXED);
+        &ctx->budget_debug_wc_cycles[vmid], 0, __ATOMIC_RELAXED);
   }
 }
 #endif
@@ -423,7 +423,7 @@ void tas_budget_debug_snapshot_core(int ctxid,
 void boost_budget(int vmid, int ctxid, int64_t incr)
 {
   int64_t old_budget, new_budget, max_budget;
-  old_budget = dataplane_budget_effective_read_relaxed(ctxs[ctxid], vmid);
+  old_budget = budget_effective_read_relaxed(ctxs[ctxid], vmid);
   new_budget = old_budget + incr;
   max_budget = config.bu_max_budget;  
 

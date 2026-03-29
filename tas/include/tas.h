@@ -42,13 +42,13 @@ extern void **vm_shm;
 extern int *vm_shm_fd;
 extern struct flextcp_pl_mem *fp_state;
 extern struct flexnic_info *tas_info;
-extern _Atomic uint16_t tas_registered_vm_count;
-extern uint16_t tas_registered_vm_ids[FLEXNIC_PL_VMST_NUM];
-extern _Atomic uint16_t tas_registered_ctx_counts[FLEXNIC_PL_VMST_NUM];
-extern uint16_t tas_registered_ctx_ids[FLEXNIC_PL_VMST_NUM]
+extern _Atomic uint16_t tas_reg_nvm;
+extern uint16_t tas_reg_vm_ids[FLEXNIC_PL_VMST_NUM];
+extern _Atomic uint16_t tas_reg_nctx[FLEXNIC_PL_VMST_NUM];
+extern uint16_t tas_reg_ctx_ids[FLEXNIC_PL_VMST_NUM]
     [FLEXNIC_PL_APPCTX_NUM];
-extern _Atomic uint32_t tas_registered_topology_gen;
-extern _Atomic uint16_t tas_registered_app_count;
+extern _Atomic uint32_t tas_reg_topo_gen;
+extern _Atomic uint16_t tas_reg_app_count;
 #if RTE_VER_YEAR < 19
   extern struct ether_addr eth_addr;
 #else
@@ -86,25 +86,25 @@ void tas_register_vm(uint16_t vmid);
 void tas_register_appctx(uint16_t vmid, uint16_t ctxid);
 void tas_register_app(void);
 
-static inline uint16_t tas_registered_vm_count_get(void)
+static inline uint16_t tas_reg_nvm_get(void)
 {
-  return atomic_load_explicit(&tas_registered_vm_count, memory_order_acquire);
+  return atomic_load_explicit(&tas_reg_nvm, memory_order_acquire);
 }
 
-static inline uint16_t tas_registered_app_count_get(void)
+static inline uint16_t tas_reg_napp_get(void)
 {
-  return atomic_load_explicit(&tas_registered_app_count, memory_order_acquire);
+  return atomic_load_explicit(&tas_reg_app_count, memory_order_acquire);
 }
 
-static inline uint16_t tas_registered_ctx_count_get(uint16_t vmid)
+static inline uint16_t tas_reg_nctx_get(uint16_t vmid)
 {
-  return atomic_load_explicit(&tas_registered_ctx_counts[vmid],
+  return atomic_load_explicit(&tas_reg_nctx[vmid],
       memory_order_acquire);
 }
 
-static inline uint32_t tas_registered_topology_gen_get(void)
+static inline uint32_t tas_reg_topo_gen_get(void)
 {
-  return atomic_load_explicit(&tas_registered_topology_gen,
+  return atomic_load_explicit(&tas_reg_topo_gen,
       memory_order_acquire);
 }
 

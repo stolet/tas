@@ -37,30 +37,17 @@ void fast_kernel_packet(struct dataplane_context *ctx,
 
 /* fast_appctx.c */
 void fast_appctx_poll_pf(struct flextcp_pl_appctx *actx, uint16_t vmid);
-void fast_appctx_poll_pf_active(struct dataplane_context *ctx);
 int fast_appctx_poll_fetch(struct dataplane_context *ctx,
     struct flextcp_pl_appctx *actx, uint32_t actx_id, uint16_t vm_id,
     void **pqe, bool spend_budget);
-int fast_appctx_poll_fetch_active(struct dataplane_context *ctx, uint16_t max,
-        unsigned *total, int *n_rem, struct polled_context *rem_apps[BATCH_SIZE], 
-        void *aqes[BATCH_SIZE]);
 int fast_appctx_poll_bump(struct dataplane_context *ctx, void *pqe,
-    struct network_buf_handle *nbh, uint32_t ts);
+    struct network_buf_handle *nbh, int *vmid, uint32_t ts);
 
 int fast_appctx_poll(struct dataplane_context *ctx, uint32_t id,
     struct network_buf_handle *nbh, uint32_t ts);
 int fast_actx_rxq_alloc(struct dataplane_context *ctx,
     struct flextcp_pl_appctx *actx, struct flextcp_pl_arx **arx, uint16_t vmid);
 int fast_actx_rxq_probe(struct flextcp_pl_appctx *actx, uint16_t vmid);
-void fast_actx_rxq_probe_active(struct dataplane_context *ctx);
-void remove_ctxs_from_active(struct dataplane_context *ctx, 
-    struct polled_context *ctxs[BATCH_SIZE], int n);
-void enqueue_ctx_to_active(struct polled_vm *act_vm, uint32_t cid); 
-void remove_ctx_from_active(struct polled_vm *act_vm, 
-    struct polled_context *act_ctx);
-void enqueue_vm_to_active(struct dataplane_context *ctx, uint16_t vmid);
-void remove_vm_from_active(struct dataplane_context *ctx, 
-    struct polled_vm *act_vm);
 
 /* fast_flows.c */
 void fast_flows_qman_pf(struct dataplane_context *ctx, uint32_t *queues,
@@ -95,7 +82,7 @@ void fast_flows_kernelxsums(struct network_buf_handle *nbh,
 void fast_flows_kernelxsums_gre(struct network_buf_handle *nbh,
     struct pkt_gre *p);
 
-int fast_flows_bump(struct dataplane_context *ctx, uint32_t flow_id,
+int fast_flows_bump(struct dataplane_context *ctx, uint32_t flow_id, int *vmid,
     uint16_t bump_seq, uint32_t rx_tail, uint32_t tx_head, uint8_t flags,
     struct network_buf_handle *nbh, uint32_t ts);
 void fast_flows_winretransmit(struct dataplane_context *ctx, uint32_t flow_id,

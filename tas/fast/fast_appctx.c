@@ -33,23 +33,11 @@
 #include "internal.h"
 #include "fastemu.h"
 
-void fast_appctx_poll_pf_active_vm(struct dataplane_context *ctx, uint32_t vmid);
 
-
-void fast_appctx_poll_fetch_active_ctx(struct dataplane_context *ctx,
-  struct polled_context *act_ctx, uint16_t *k, uint16_t max,
-  unsigned *total, int *n_rem, struct polled_context *rem_ctxs[BATCH_SIZE],
-  void *aqes[BATCH_SIZE], bool spend_budget);
-void fast_appctx_poll_fetch_active_vm(struct dataplane_context *ctx, 
-    struct polled_vm *act_vm, uint16_t *k, uint16_t max,
-    unsigned *total, int *n_rem, struct polled_context *rem_ctxs[BATCH_SIZE],
-    void *aqes[BATCH_SIZE], bool spend_budget);
 int fast_appctx_poll_fetch(struct dataplane_context *ctx,
     struct flextcp_pl_appctx *actx, uint32_t actx_id, uint16_t vm_id,
     void **pqe, bool spend_budget);
 
-void fast_actx_rxq_probe_active_vm(struct dataplane_context *ctx, 
-    struct polled_vm *act_vm);
 int fast_actx_rxq_probe(struct flextcp_pl_appctx *actx, uint16_t vm_id);
 
 static inline struct flextcp_pl_appctx *fast_appctx_lookup(
@@ -57,136 +45,10 @@ static inline struct flextcp_pl_appctx *fast_appctx_lookup(
 {
   return &fp_state->appctx[ctx->id][vmid][cid];
 }
-    
-
-void inline fast_appctx_poll_pf_active_vm(struct dataplane_context *ctx, uint32_t vmid)
-{
-  uint32_t cid;
-  struct polled_vm *act_vm;
-  act_vm = &ctx->polled_vms[vmid];
-
-  cid = act_vm->act_ctx_head;
-  do {
-    fast_appctx_poll_pf(fast_appctx_lookup(ctx, vmid, cid), vmid);
-    cid = act_vm->ctxs[cid].next;
-  } while(cid != act_vm->act_ctx_head);
-}
-
-void inline fast_appctx_poll_pf_active(struct dataplane_context *ctx)
-{
-  uint32_t vmid;
-
-  vmid = ctx->act_head;
-  do {
-    fast_appctx_poll_pf_active_vm(ctx, vmid);
-    vmid = ctx->polled_vms[vmid].next;
-  } while (vmid != ctx->act_head);
-} 
 
 void inline fast_appctx_poll_pf(struct flextcp_pl_appctx *actx, uint16_t vmid)
 {
   rte_prefetch0(dma_pointer(actx->tx_base + actx->tx_head, 1, vmid));
-}
-
-void fast_appctx_poll_fetch_active_ctx(struct dataplane_context *ctx,
-  struct polled_context *act_ctx, uint16_t *k, uint16_t max,
-  unsigned *total, int *n_rem, struct polled_context *rem_ctxs[BATCH_SIZE],
-  void *aqes[BATCH_SIZE], bool spend_budget)
-{
-  int ret;
-  unsigned i_b;
-  struct flextcp_pl_appctx *actx;
-
-  actx = fast_appctx_lookup(ctx, act_ctx->vmid, act_ctx->id);
-
-  for (i_b = 0; i_b < BATCH_SIZE && *k < max; i_b++) 
-  {
-    ret = fast_appctx_poll_fetch(ctx, actx, act_ctx->id, act_ctx->vmid,
-        &aqes[*k], spend_budget);
-    if (ret == 0)
-    {
-      *k = *k + 1;
-      act_ctx->null_rounds = 0;
-    } else
-    {
-      act_ctx->null_rounds = act_ctx->null_rounds == MAX_NULL_ROUNDS ? 
-          MAX_NULL_ROUNDS : act_ctx->null_rounds + 1;
-
-      if (act_ctx->null_rounds >= MAX_NULL_ROUNDS)
-      {
-        rem_ctxs[*n_rem] = act_ctx;
-        *n_rem = *n_rem + 1;
-      }
-      break;
-    }
-    *total = *total + 1;
-  }
-}
-
-void inline fast_appctx_poll_fetch_active_vm(struct dataplane_context *ctx, 
-    struct polled_vm *act_vm, uint16_t *k, uint16_t max,
-    unsigned *total, int *n_rem, struct polled_context *rem_ctxs[BATCH_SIZE],
-    void *aqes[BATCH_SIZE], bool spend_budget)
-{
-  uint32_t cid;
-  struct polled_context *act_ctx;
-
-  cid = act_vm->act_ctx_head;
-  do  {
-    act_ctx = &act_vm->ctxs[cid];
-    
-    fast_appctx_poll_fetch_active_ctx(ctx, act_ctx, k, max, 
-        total, n_rem, rem_ctxs, aqes, spend_budget);
-        
-    cid = act_ctx->next;
-  } while(cid != act_vm->act_ctx_head && *k < max);
-
-  act_vm->act_ctx_head = act_vm->ctxs[act_vm->act_ctx_head].next;
-  act_vm->act_ctx_tail = act_vm->ctxs[act_vm->act_ctx_tail].next;
-}
-
-int fast_appctx_poll_fetch_active(struct dataplane_context *ctx, uint16_t max,
-    unsigned *total, int *n_rem, struct polled_context *rem_ctxs[BATCH_SIZE], 
-    void *aqes[BATCH_SIZE])
-{
-  uint16_t temp_k, k = 0;
-  uint32_t vmid;
-  struct polled_vm *act_vm;
-
-  int oob_i = 0, oob_n;
-  int oob_vms[FLEXNIC_PL_VMST_NUM];
-  
-  vmid = ctx->act_head;
-  do {
-    act_vm = &ctx->polled_vms[vmid];
-
-    if (dataplane_budget_available(ctx, vmid))
-    {
-      fast_appctx_poll_fetch_active_vm(ctx, act_vm, &k, max, total, 
-          n_rem, rem_ctxs, aqes, true);
-    } else
-    {
-      oob_vms[oob_i] = vmid;
-      oob_i++;
-    }
-
-    vmid = ctx->polled_vms[vmid].next; 
-  } while (vmid != ctx->act_head && k < max);
-
-  oob_n = oob_i;
-  temp_k = k;
-  for (oob_i = 0; oob_i < oob_n && temp_k == 0; oob_i++)
-  {
-    vmid = oob_vms[oob_i];
-    act_vm = &ctx->polled_vms[vmid];
-    if (k < max)
-    {
-      fast_appctx_poll_fetch_active_vm(ctx, act_vm, &k, max, total, n_rem, 
-          rem_ctxs, aqes, false);
-    }
-  }
-
-  return k;
 }
 
 int fast_appctx_poll_fetch(struct dataplane_context *ctx,
@@ -233,27 +95,26 @@ int fast_appctx_poll_fetch(struct dataplane_context *ctx,
     tx_head -= actx->tx_len;
   actx->tx_head = tx_head;
 
-  if (spend_budget) {
-    dataplane_budget_account(ctx, vm_id, atx->msg.connupdate.tx_bump);
 #ifdef BUDGET_DEBUG_STATS
-  } else {
+  if (!spend_budget) 
+  {
     ctx->budget_debug_work_conserving_vm[vm_id] += atx->msg.connupdate.tx_bump;
     ctx->budget_debug_work_conserving_total += atx->msg.connupdate.tx_bump;
-#endif
   }
+#endif
 
   return 0;
 }
 
 int inline fast_appctx_poll_bump(struct dataplane_context *ctx, void *pqe,
-    struct network_buf_handle *nbh, uint32_t ts)
+    struct network_buf_handle *nbh, int *vmid, uint32_t ts)
 {
   int ret;
   
   struct flextcp_pl_atx *atx = pqe;
   int flow_id = atx->msg.connupdate.flow_id;
 
-  ret = fast_flows_bump(ctx, flow_id,
+  ret = fast_flows_bump(ctx, flow_id, vmid,
       atx->msg.connupdate.bump_seq, atx->msg.connupdate.rx_bump,
       atx->msg.connupdate.tx_bump, atx->msg.connupdate.flags, nbh, ts);
 
@@ -327,151 +188,4 @@ int fast_actx_rxq_probe(struct flextcp_pl_appctx *actx, uint16_t vmid)
   }
 
   return 0;
-}
-
-void inline fast_actx_rxq_probe_active_vm(struct dataplane_context *ctx, 
-    struct polled_vm *act_vm)
-{
-  uint32_t cid, vmid;
-
-  cid = act_vm->act_ctx_head;
-  vmid = act_vm->id;
-  do {
-    fast_actx_rxq_probe(fast_appctx_lookup(ctx, vmid, cid), vmid);
-    cid = act_vm->ctxs[cid].next;
-  } while(cid != act_vm->act_ctx_head); 
-}
-
-void inline fast_actx_rxq_probe_active(struct dataplane_context *ctx)
-{
-  uint32_t vmid;
-  struct polled_vm *act_vm;
-
-  vmid = ctx->act_head;
-  do {
-    act_vm = &ctx->polled_vms[vmid];
-    fast_actx_rxq_probe_active_vm(ctx, act_vm);
-    vmid = ctx->polled_vms[vmid].next;
-  } while (vmid != ctx->act_head);
-}
-
-/*****************************************************************************/
-/* Manages active vms and context rings */
-
-void remove_ctxs_from_active(struct dataplane_context *ctx, 
-    struct polled_context *ctxs[BATCH_SIZE], int n)
-{
-  int i;
-  uint32_t vmid, cid;
-  struct polled_vm *p_vm;
-
-  for (i = 0; i < n; i++)
-  {
-    cid = ctxs[i]->id;
-    vmid = ctxs[i]->vmid;
-    p_vm = &ctx->polled_vms[vmid];
-    remove_ctx_from_active(p_vm, &p_vm->ctxs[cid]);
-
-    if (p_vm->act_ctx_head == IDXLIST_INVAL)
-    {
-      remove_vm_from_active(ctx, p_vm);
-    }
-  }
-}
-
-void enqueue_ctx_to_active(struct polled_vm *act_vm, uint32_t cid) 
-{
-  if (act_vm->act_ctx_tail == IDXLIST_INVAL)
-  {
-    act_vm->act_ctx_tail = act_vm->act_ctx_head = cid;
-    act_vm->ctxs[cid].prev = act_vm->act_ctx_tail;
-    act_vm->ctxs[cid].next = act_vm->act_ctx_head;
-    act_vm->ctxs[cid].flags |= FLAG_ACTIVE;
-    return;
-  }
-
-  act_vm->ctxs[act_vm->act_ctx_tail].next = cid;
-  act_vm->ctxs[act_vm->act_ctx_head].prev = cid;
-  act_vm->ctxs[cid].prev = act_vm->act_ctx_tail;
-  act_vm->ctxs[cid].next = act_vm->act_ctx_head;
-  act_vm->ctxs[cid].flags |= FLAG_ACTIVE;
-  act_vm->act_ctx_tail = cid;
-}
-
-void remove_ctx_from_active(struct polled_vm *act_vm, 
-    struct polled_context *act_ctx)
-{
-  if (act_vm->act_ctx_tail == act_vm->act_ctx_head)
-  {
-    act_vm->act_ctx_head = act_vm->act_ctx_tail = IDXLIST_INVAL;
-    act_ctx->next = IDXLIST_INVAL;
-    act_ctx->prev = IDXLIST_INVAL;
-    act_ctx->flags &= ~FLAG_ACTIVE;
-    act_ctx->null_rounds = 0;
-    return;
-  }
-  
-  /* element is tail */
-  if (act_ctx->next == act_vm->act_ctx_head)
-  {
-    act_vm->act_ctx_tail = act_ctx->prev;
-  } else if (act_ctx->prev == act_vm->act_ctx_tail) /* element is head */
-  {
-    act_vm->act_ctx_head = act_ctx->next;
-  }
-  
-  act_vm->ctxs[act_ctx->prev].next = act_ctx->next;
-  act_vm->ctxs[act_ctx->next].prev = act_ctx->prev;
-  act_ctx->next = IDXLIST_INVAL;
-  act_ctx->prev = IDXLIST_INVAL;
-  act_ctx->flags &= ~FLAG_ACTIVE;
-  act_ctx->null_rounds = 0;
-}
-
-void enqueue_vm_to_active(struct dataplane_context *ctx, uint16_t vmid)
-{
-  if (ctx->act_tail == IDXLIST_INVAL)
-  {
-    ctx->act_tail = ctx->act_head = vmid;
-    ctx->polled_vms[vmid].prev = ctx->act_tail;
-    ctx->polled_vms[vmid].next = ctx->act_head;
-    ctx->polled_vms[vmid].flags |= FLAG_ACTIVE;
-    return;
-  }
-
-  ctx->polled_vms[ctx->act_tail].next = vmid;
-  ctx->polled_vms[ctx->act_head].prev = vmid;
-  ctx->polled_vms[vmid].prev = ctx->act_tail;
-  ctx->polled_vms[vmid].next = ctx->act_head;
-  ctx->polled_vms[vmid].flags |= FLAG_ACTIVE;
-  ctx->act_tail = vmid;
- }
-
-void remove_vm_from_active(struct dataplane_context *ctx, 
-    struct polled_vm *act_vm)
-{
-  /* one vm in ring */
-  if (ctx->act_tail == ctx->act_head)
-  {
-    ctx->act_head = ctx->act_tail = IDXLIST_INVAL;
-    act_vm->next = IDXLIST_INVAL;
-    act_vm->prev = IDXLIST_INVAL;
-    act_vm->flags &= ~FLAG_ACTIVE;
-    return;
-  }
-  
-  /* element is tail */
-  if (act_vm->next == ctx->act_head)
-  {
-    ctx->act_tail = act_vm->prev;
-  } else if (act_vm->prev == ctx->act_tail) /* element is head */
-  {
-    ctx->act_head = act_vm->next;
-  }
-  
-  ctx->polled_vms[act_vm->prev].next = act_vm->next;
-  ctx->polled_vms[act_vm->next].prev = act_vm->prev;
-  act_vm->next = IDXLIST_INVAL;
-  act_vm->prev = IDXLIST_INVAL;
-  act_vm->flags &= ~FLAG_ACTIVE;
 }

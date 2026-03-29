@@ -84,10 +84,10 @@ uint32_t cc_next_ts(uint32_t cur_ts)
   assert(cur_ts >= last_ts);
   uint32_t ts = -1U;
 
-  vm_count = tas_registered_vm_count_get();
+  vm_count = tas_reg_nvm_get();
   for (i = 0; i < vm_count; i++)
   {
-    vmid = tas_registered_vm_ids[i];
+    vmid = tas_reg_vm_ids[i];
     cc_next_ts_vm(cur_ts, vmid, &ts);
   }
 
@@ -122,7 +122,7 @@ unsigned cc_poll(uint32_t cur_ts)
   if (0 && diff_ts < config.cc_control_granularity)
     return 0;
 
-  vm_count = tas_registered_vm_count_get();
+  vm_count = tas_reg_nvm_get();
   if (vm_count == 0) {
     last_ts = cur_ts;
     next_vm = 0;
@@ -135,7 +135,7 @@ unsigned cc_poll(uint32_t cur_ts)
 
   for(i = 0; i < vm_count && n < 128; i++)
   {
-    vmid = tas_registered_vm_ids[(next_vm + i) % vm_count];
+    vmid = tas_reg_vm_ids[(next_vm + i) % vm_count];
     n = cc_poll_vm(vmid, n, cur_ts, diff_ts);
   }
 

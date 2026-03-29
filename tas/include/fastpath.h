@@ -38,10 +38,6 @@
 #define BUFCACHE_SIZE 128
 #define TXBUF_SIZE (2 * BATCH_SIZE)
 
-#define FLAG_ACTIVE 1
-#define MAX_POLL_ROUNDS 15
-#define MAX_NULL_ROUNDS 2000
-
 #define POLL_PHASE 1
 #define TX_PHASE 2
 #define RX_PHASE 3
@@ -180,19 +176,17 @@ struct dataplane_context {
   uint32_t act_head;
   uint32_t act_tail;
   struct polled_vm polled_vms[FLEXNIC_PL_VMST_NUM];  
-  uint32_t registered_topology_gen;
-  uint16_t registered_vm_count;
-  uint16_t registered_ctx_count;
-  struct dataplane_poll_vm registered_vms[FLEXNIC_PL_VMST_NUM];
+  uint32_t reg_topo_gen;
+  uint16_t reg_vm_count;
+  uint16_t reg_ctx_count;
+  struct dataplane_poll_vm reg_vms[FLEXNIC_PL_VMST_NUM];
   struct dataplane_poll_ctx
-      registered_ctxs[FLEXNIC_PL_VMST_NUM * FLEXNIC_PL_APPCTX_NUM];
+      reg_ctxs[FLEXNIC_PL_VMST_NUM * FLEXNIC_PL_APPCTX_NUM];
 
   /********************************************************/
   /* group resource budget */
   int counters_total;
   int vm_counters[FLEXNIC_PL_VMST_NUM];
-  uint16_t budget_active_num;
-  uint16_t budget_active_vms[FLEXNIC_PL_VMST_NUM];
   int64_t budget_cache[FLEXNIC_PL_VMST_NUM];
   struct vm_budget budgets[FLEXNIC_PL_VMST_NUM];
 
@@ -218,7 +212,7 @@ struct dataplane_context {
   volatile uint64_t budget_debug_consumed_vm[FLEXNIC_PL_VMST_NUM];
   int budget_debug_work_conserving_total;
   int budget_debug_work_conserving_vm[FLEXNIC_PL_VMST_NUM];
-  volatile uint64_t budget_debug_work_conserving_cycles[FLEXNIC_PL_VMST_NUM];
+  volatile uint64_t budget_debug_wc_cycles[FLEXNIC_PL_VMST_NUM];
 #endif
 #ifdef DATAPLANE_STATS
   /********************************************************/
@@ -244,62 +238,73 @@ struct dataplane_context {
 
 extern struct dataplane_context **ctxs;
 
-static inline void dataplane_budget_account(struct dataplane_context *ctx,
-    uint16_t vmid, uint32_t amount)
+#ifdef BUDGET_DEBUG_STATS
+static inline void budget_debug_record_consume(
+    struct dataplane_context *ctx, uint16_t vmid, uint64_t amount)
 {
   if (amount == 0)
     return;
 
-  if (ctx->vm_counters[vmid] == 0)
-    ctx->budget_active_vms[ctx->budget_active_num++] = vmid;
-
-  ctx->vm_counters[vmid] += amount;
-  ctx->counters_total += amount;
+  __atomic_fetch_add(&ctx->budget_debug_consumed_total, amount,
+      __ATOMIC_RELAXED);
+  __atomic_fetch_add(&ctx->budget_debug_consumed_vm[vmid], amount,
+      __ATOMIC_RELAXED);
 }
 
-static inline int64_t dataplane_budget_cache_read_relaxed(
+static inline void budget_debug_record_wc(
+    struct dataplane_context *ctx, uint16_t vmid, uint64_t amount)
+{
+  if (amount == 0)
+    return;
+
+  __atomic_fetch_add(&ctx->budget_debug_wc_cycles[vmid], amount,
+      __ATOMIC_RELAXED);
+}
+#endif
+
+static inline int64_t budget_cache_read_relaxed(
     const struct dataplane_context *ctx, uint16_t vmid)
 {
   return __atomic_load_n(&ctx->budget_cache[vmid], __ATOMIC_RELAXED);
 }
 
-static inline void dataplane_budget_cache_write_relaxed(
+static inline void budget_cache_write_relaxed(
     struct dataplane_context *ctx, uint16_t vmid, int64_t value)
 {
   __atomic_store_n(&ctx->budget_cache[vmid], value, __ATOMIC_RELAXED);
 }
 
-static inline int64_t dataplane_budget_effective_read_relaxed(
+static inline int64_t budget_effective_read_relaxed(
     const struct dataplane_context *ctx, uint16_t vmid)
 {
-  return dataplane_budget_cache_read_relaxed(ctx, vmid) +
+  return budget_cache_read_relaxed(ctx, vmid) +
       vm_budget_read_relaxed(&ctx->budgets[vmid]);
 }
 
-static inline int64_t dataplane_budget_cache_refill(
+static inline int64_t budget_cache_refill(
     struct dataplane_context *ctx, uint16_t vmid)
 {
   int64_t cache;
 
-  cache = dataplane_budget_cache_read_relaxed(ctx, vmid);
+  cache = budget_cache_read_relaxed(ctx, vmid);
   if (cache > 0)
     return cache;
 
   cache += vm_budget_exchange_relaxed(&ctx->budgets[vmid], 0);
-  dataplane_budget_cache_write_relaxed(ctx, vmid, cache);
+  budget_cache_write_relaxed(ctx, vmid, cache);
   return cache;
 }
 
-static inline int dataplane_budget_available(struct dataplane_context *ctx,
+static inline int budget_available(struct dataplane_context *ctx,
     uint16_t vmid)
 {
-  if (dataplane_budget_cache_read_relaxed(ctx, vmid) > 0)
+  if (budget_cache_read_relaxed(ctx, vmid) > 0)
     return 1;
 
-  return dataplane_budget_cache_refill(ctx, vmid) > 0;
+  return budget_cache_refill(ctx, vmid) > 0;
 }
 
-static inline void dataplane_budget_consume(struct dataplane_context *ctx,
+static inline void budget_consume(struct dataplane_context *ctx,
     uint16_t vmid, uint64_t amount)
 {
   int64_t cache;
@@ -307,12 +312,15 @@ static inline void dataplane_budget_consume(struct dataplane_context *ctx,
   if (amount == 0)
     return;
 
-  cache = dataplane_budget_cache_read_relaxed(ctx, vmid);
+  cache = budget_cache_read_relaxed(ctx, vmid);
   if (cache <= 0 || (uint64_t) cache < amount)
-    cache = dataplane_budget_cache_refill(ctx, vmid);
+    cache = budget_cache_refill(ctx, vmid);
 
   cache -= (int64_t) amount;
-  dataplane_budget_cache_write_relaxed(ctx, vmid, cache);
+  budget_cache_write_relaxed(ctx, vmid, cache);
+#ifdef BUDGET_DEBUG_STATS
+  budget_debug_record_consume(ctx, vmid, amount);
+#endif
 }
 
 int dataplane_init(void);

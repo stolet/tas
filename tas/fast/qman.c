@@ -134,7 +134,8 @@ static inline int timestamp_lessthaneq(struct vm_queue *vq, uint32_t a,
 static inline int vmcont_init(struct qman_thread *t);
 static inline int vm_qman_poll(struct dataplane_context *ctx,
     struct skiplist_fstate *skpl_state, unsigned num, 
-    unsigned *vm_id, unsigned *q_ids, uint16_t *q_bytes);
+    unsigned *vm_id, unsigned *q_ids, uint16_t *q_bytes,
+    uint64_t *cycles, int *cycles_n);
 static inline int vm_qman_set(struct qman_thread *t, uint32_t vm_id, uint32_t flow_id,
     uint32_t rate, uint32_t avail, uint16_t max_chunk, uint8_t flags);
 static inline void vm_queue_fire(struct vm_qman *vqman, struct vm_queue *q,
@@ -205,17 +206,19 @@ int tas_qman_thread_init(struct dataplane_context *ctx)
 }
 
 int tas_qman_poll(struct dataplane_context *ctx, unsigned num, unsigned *vm_ids,
-              unsigned *q_ids, uint16_t *q_bytes)
+    unsigned *q_ids, uint16_t *q_bytes, uint64_t *cycles, int *cycles_n)
 {
   int ret;
   struct skiplist_fstate skpl_state;
 
-  ret = vm_qman_poll(ctx, &skpl_state, num, vm_ids, q_ids, q_bytes);
+  ret = vm_qman_poll(ctx, &skpl_state, num, vm_ids, q_ids, 
+      q_bytes, cycles, cycles_n);
   return ret;
 }
 
-int tas_qman_set(struct qman_thread *t, uint32_t vm_id, uint32_t flow_id, uint32_t rate,
-             uint32_t avail, uint16_t max_chunk, uint8_t flags)
+int tas_qman_set(struct qman_thread *t, uint32_t vm_id, 
+    uint32_t flow_id, uint32_t rate, uint32_t avail, 
+    uint16_t max_chunk, uint8_t flags)
 {
   int ret;
   ret = vm_qman_set(t, vm_id, flow_id, rate, avail, max_chunk, flags);
@@ -387,22 +390,28 @@ int vmcont_init(struct qman_thread *t)
 
 static inline int vm_qman_poll(struct dataplane_context *ctx,
     struct skiplist_fstate *skpl_state, unsigned num, 
-    unsigned *vm_ids, unsigned *q_ids, uint16_t *q_bytes)
+    unsigned *vm_ids, unsigned *q_ids, uint16_t *q_bytes, 
+    uint64_t *cycles, int *cycles_n)
 {
   uint32_t idx;
-  int cnt, temp_cnt, x, bytes_sum;
+  uint64_t start, end;
+  int cnt, temp_cnt, x, bytes_sum, i;
+  uint8_t has_funded;
   struct qman_thread *t = &ctx->qman;
   struct vm_qman *vqman = t->vqman;
   struct flow_qman *fqman;
   struct vm_queue *vq, *rvq;
+  struct vm_queue *broke_vms[BATCH_SIZE];
+  int broke_n = 0;
   
-  int oob_n, oob_i = 0;
-  struct vm_queue *oob_vms[FLEXNIC_PL_VMST_NUM];
   skpl_state->cur_ts = timestamp();
 
+  /* Service funded VMs */
+  has_funded = 0;
   rvq = NULL;
   for (cnt = 0; cnt < num && vqman->head_idx != IDXLIST_INVAL;)
   {
+    start = util_rdtsc();
     idx = vqman->head_idx;
     vq = &vqman->queues[idx];
     if (rvq == vq)
@@ -413,7 +422,7 @@ static inline int vm_qman_poll(struct dataplane_context *ctx,
     if (vq->next_idx == IDXLIST_INVAL)
       vqman->tail_idx = IDXLIST_INVAL;
 
-    if (dataplane_budget_available(ctx, idx))
+    if (budget_available(ctx, idx))
     {
       fqman = vq->fqman;
       skpl_state->rate_limited = 0;
@@ -421,6 +430,8 @@ static inline int vm_qman_poll(struct dataplane_context *ctx,
       bytes_sum = 0;
       x = flow_qman_poll(t, vq, fqman, skpl_state, num - cnt, 
           q_ids + cnt, q_bytes + cnt, vm_ids + cnt, &bytes_sum);
+      
+      temp_cnt = cnt;
       cnt += x;
 
       if (vq->avail > 0)
@@ -429,32 +440,40 @@ static inline int vm_qman_poll(struct dataplane_context *ctx,
         if (skpl_state->rate_limited && rvq == NULL)
           rvq = vq;
       }
-
-      dataplane_budget_account(ctx, idx, bytes_sum);
-
-    } else
+      
+      if (x > 0)
+      {
+        has_funded = 1;
+        end = util_rdtsc();
+        cycles[temp_cnt] += end - start;
+      }
+    } 
+    else
     {
+      /* VM out of budget: collect for work-conserving pass */
       if (vq->avail > 0)
       {
-        oob_vms[oob_i] = vq;
-        oob_i++;
+        broke_vms[broke_n] = vq;
+        broke_n++;
       }
+      temp_cnt = cnt;
     }
   }
+  *cycles_n = cnt;
 
-  oob_n = oob_i;
-  temp_cnt = cnt;
-  for (oob_i = 0; oob_i < oob_n; oob_i++)
+  /* Service broke VMs */
+  for (i = 0; i < broke_n; i++)
   {
-    vq = oob_vms[oob_i];
+    vq = broke_vms[i];
     vq->flags &= ~FLAG_INNOLIMITL;
 
-    /** Only serve out of budget VMs if nothing in batch */
-    if (cnt < num && temp_cnt == 0)
+    /* Only service broke VMs if no funded VM was serviced */
+    if (!has_funded && cnt < num)
     {
       fqman = vq->fqman;
       skpl_state->rate_limited = 0;
       bytes_sum = 0;
+      temp_cnt = cnt;
       x = flow_qman_poll(t, vq, fqman, skpl_state,
           num - cnt, q_ids + cnt, q_bytes + cnt, vm_ids + cnt, 
           &bytes_sum);
@@ -463,12 +482,9 @@ static inline int vm_qman_poll(struct dataplane_context *ctx,
       {
         vm_queue_fire(vqman, vq, vq->id, q_bytes, bytes_sum, cnt - x, cnt);
       }
-#ifdef BUDGET_DEBUG_STATS
-      ctx->budget_debug_work_conserving_vm[vq->id] += bytes_sum;
-      ctx->budget_debug_work_conserving_total += bytes_sum;
-#endif
     } else
     {
+      /* If not serviced, return broke VM to funded list for next poll cycle */
       vm_queue_activate(vqman, vq, vq->id);
     }
   }
