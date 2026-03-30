@@ -30,7 +30,7 @@
 #define VIRTUOSO_OVS 0
 
 /* Uncomment to enable per-core budget debug statistics. */
-#define BUDGET_DEBUG_STATS
+// #define BUDGET_DEBUG_STATS
 
 /* Slowpath inner-loop cadence for opportunistic budget checks. */
 #define BUDGET_INNER_UPDATE_STRIDE 32
