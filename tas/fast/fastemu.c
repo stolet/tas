@@ -588,7 +588,7 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
       cycles[vmid] += end - start;
     }
   }
-  ctx->poll_next_vm = next_vm;
+  ctx->poll_next_vm = (next_vm + i_v) % vm_count;
 
   /* Service out of budget VMs if nothing else to poll */
   temp_k = k;

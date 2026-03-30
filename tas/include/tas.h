@@ -88,24 +88,18 @@ void tas_register_app(void);
 
 static inline uint16_t tas_reg_nvm_get(void)
 {
-  return atomic_load_explicit(&tas_reg_nvm, memory_order_acquire);
+  return atomic_load_explicit(&tas_reg_nvm, memory_order_relaxed);
 }
 
 static inline uint16_t tas_reg_napp_get(void)
 {
-  return atomic_load_explicit(&tas_reg_app_count, memory_order_acquire);
+  return atomic_load_explicit(&tas_reg_app_count, memory_order_relaxed);
 }
 
 static inline uint16_t tas_reg_nctx_get(uint16_t vmid)
 {
   return atomic_load_explicit(&tas_reg_nctx[vmid],
-      memory_order_acquire);
-}
-
-static inline uint32_t tas_reg_topo_gen_get(void)
-{
-  return atomic_load_explicit(&tas_reg_topo_gen,
-      memory_order_acquire);
+      memory_order_relaxed);
 }
 
 /* should become config options */
