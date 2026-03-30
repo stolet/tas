@@ -570,7 +570,8 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
 
       for (i_b = 0; i_b < BATCH_SIZE && k < max; i_b++)
       {
-        ret = fast_appctx_poll_fetch(ctx, ctxid, vmid, &aqes[k], 1);
+        ret = fast_appctx_poll_fetch(ctx, vmid, ctxid, &aqes[k], 1);
+        
         if (ret == 0)
           k++;
         else
