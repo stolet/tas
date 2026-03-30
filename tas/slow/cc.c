@@ -157,11 +157,6 @@ static unsigned cc_poll_vm(int vmid, unsigned n,
   for (; n < 128 && (m == 0 || c != c_first);
       c = (c->cc_next != NULL ? c->cc_next : cc_conns[vmid]), n++, m++)
   {
-    if (UNLIKELY((m & (BUDGET_INNER_UPDATE_STRIDE - 1)) ==
-        (BUDGET_INNER_UPDATE_STRIDE - 1))) {
-      budget_update(util_rdtsc());
-    }
-
     if (c->status != CONN_OPEN)
     {
       continue;
@@ -192,9 +187,12 @@ static unsigned cc_poll_vm(int vmid, unsigned n,
     c->cc_last_ecnb = stats.c_ecnb;
     stats.c_ecnb -= last;
 
-    kstats.drops += stats.c_drops;
-    kstats.ecn_marked += stats.c_ecnb;
-    kstats.acks += stats.c_ackb;
+    __atomic_fetch_add(&kstats.drops, (uint64_t) stats.c_drops,
+        __ATOMIC_RELAXED);
+    __atomic_fetch_add(&kstats.ecn_marked, (uint64_t) stats.c_ecnb,
+        __ATOMIC_RELAXED);
+    __atomic_fetch_add(&kstats.acks, (uint64_t) stats.c_ackb,
+        __ATOMIC_RELAXED);
 
     switch (config.cc_algorithm) {
       case CONFIG_CC_DCTCP_WIN:
@@ -305,7 +303,7 @@ static inline void issue_retransmits(struct connection *c,
       if (nicif_connection_retransmit(c->flow_id, vmid, c->flow_group) == 0) {
         c->cnt_tx_pending = 0;
         c->cnt_win_updt_pending = 0;
-        kstats.kernel_rexmit++;
+        __atomic_fetch_add(&kstats.kernel_rexmit, 1, __ATOMIC_RELAXED);
         c->cc_rexmits++;
       }
     }
@@ -320,7 +318,7 @@ static inline void issue_retransmits(struct connection *c,
         (cur_ts - c->ts_win_updt_pending) >= 4 * rtt) {
       if (nicif_connection_winretransmit(c->flow_id, vmid, c->flow_group) == 0) {
         c->cnt_win_updt_pending = 0;
-        kstats.kernel_rexmit++;
+        __atomic_fetch_add(&kstats.kernel_rexmit, 1, __ATOMIC_RELAXED);
         c->cc_rexmits++;
       }
     }

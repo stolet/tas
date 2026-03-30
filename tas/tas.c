@@ -62,6 +62,7 @@ _Atomic uint32_t tas_reg_topo_gen = 1;
 _Atomic uint16_t tas_reg_app_count = 0;
 
 static unsigned threads_launched = 0;
+static unsigned budget_lcore = LCORE_ID_ANY;
 int exited;
 
 struct budget_statistics budget_statistics;
@@ -136,9 +137,9 @@ void tas_register_app(void)
 }
 
 
-static void *slowpath_thread(int threads_launched)
+static void *slowpath_thread(int threads_launched, unsigned budget_core)
 {
-  slowpath_main(threads_launched);
+  slowpath_main(threads_launched, budget_core);
   return NULL;
 }
 
@@ -205,7 +206,7 @@ int main(int argc, char *argv[])
   }
 
   /* Start kernel thread */
-  slowpath_thread(threads_launched);
+  slowpath_thread(threads_launched, budget_lcore);
 
 error_dataplane_cleanup:
   /* TODO */
@@ -273,8 +274,8 @@ static int start_threads(void)
   void *arg;
 
   cores_avail = rte_lcore_count();
-  /* fast path cores + one slow path core */
-  cores_needed = fp_cores_max + 1;
+  /* fast path cores + one slow path core + one dedicated budget core */
+  cores_needed = fp_cores_max + 2;
 
   if ((ctxs = rte_calloc("context list", fp_cores_max, sizeof(*ctxs), 64)) == NULL) {
     perror("datplane_init: calloc failed");
@@ -297,7 +298,15 @@ static int start_threads(void)
         return -1;
       }
       threads_launched++;
+    } else if (budget_lcore == LCORE_ID_ANY) {
+      budget_lcore = core;
+      break;
     }
+  }
+
+  if (budget_lcore == LCORE_ID_ANY) {
+    fprintf(stderr, "No dedicated lcore available for budget loop\n");
+    return -1;
   }
 
   return threads_launched;

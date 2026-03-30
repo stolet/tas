@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 /*
  * Copyright 2019 University of Washington, Max Planck Institute for
  * Software Systems, and The University of Texas at Austin
@@ -25,6 +26,9 @@
 #include <inttypes.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <pthread.h>
+#include <rte_launch.h>
+#include <rte_pause.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
@@ -40,15 +44,16 @@
 static void slowpath_block(uint32_t cur_ts);
 static void timeout_trigger(struct timeout *to, uint8_t type, void *opaque);
 static void signal_tas_ready(void);
+static void slowpath_print_stats(void);
+static int budget_thread(void *arg);
+static void budget_thread_advance_deadline(uint64_t *deadline,
+    uint64_t period_tsc, uint64_t now);
 void flexnic_loadmon(uint32_t cur_ts);
 
 #ifdef BATCH_SIZE_STATS
 static void batch_stats_format_avg(char *buf, size_t len, uint64_t total,
     uint64_t polls);
 #endif
-
-struct budget_statistics get_budget_stats(int vmid, int ctxid);
-void print_budget();
 
 struct timeout_manager timeout_mgr;
 static int exited = 0;
@@ -72,12 +77,10 @@ static void batch_stats_format_avg(char *buf, size_t len, uint64_t total,
 }
 #endif
 
-int slowpath_main(int threads_launched)
+int slowpath_main(int threads_launched, unsigned budget_lcore)
 {
   struct notify_blockstate nbs;
-  uint32_t last_print = 0;
   uint32_t loadmon_ts = 0;
-  uint64_t budget_check_tsc;
 
   kernel_notifyfd = eventfd(0, EFD_NONBLOCK);
   assert(kernel_notifyfd != -1);
@@ -148,6 +151,14 @@ int slowpath_main(int threads_launched)
     return EXIT_FAILURE;
   }
 
+  r = rte_eal_remote_launch(budget_thread, NULL, budget_lcore);
+  if (r != 0)
+  {
+    fprintf(stderr, "slowpath_main: launching budget thread failed on lcore "
+        "%u (%d)\n", budget_lcore, r);
+    return EXIT_FAILURE;
+  }
+
   signal_tas_ready();
 
   notify_canblock_reset(&nbs);
@@ -157,26 +168,14 @@ int slowpath_main(int threads_launched)
     
     cur_ts = util_timeout_time_us();
     n += nicif_poll();
-    budget_check_tsc = util_rdtsc();
-    budget_update(budget_check_tsc);
     #if VIRTUOSO_GRE
       n += ovs_poll();
     #endif
     n += cc_poll(cur_ts);
-    budget_check_tsc = util_rdtsc();
-    budget_update(budget_check_tsc);
     n += appif_poll();
-    budget_check_tsc = util_rdtsc();
-    budget_update(budget_check_tsc);
     n += kni_poll();
-    budget_check_tsc = util_rdtsc();
-    budget_update(budget_check_tsc);
     tcp_poll();
-    budget_check_tsc = util_rdtsc();
-    budget_update(budget_check_tsc);
     util_timeout_poll_ts(&timeout_mgr, cur_ts);
-    budget_check_tsc = util_rdtsc();
-    budget_update(budget_check_tsc);
 
     if (config.fp_autoscale && cur_ts - loadmon_ts >= 10000)
     {
@@ -188,45 +187,115 @@ int slowpath_main(int threads_launched)
     {
       slowpath_block(cur_ts);
       notify_canblock_reset(&nbs);
-      budget_check_tsc = util_rdtsc();
-      budget_update(budget_check_tsc);
-    }
-
-    if (cur_ts - last_print >= 1000000)
-    {
-
-      if (!config.quiet)
-      {
-#ifdef BATCH_SIZE_STATS
-        struct dataplane_batch_stats batch_stats;
-        char rx_avg[32], qm_avg[32], qs_avg[32];
-
-        dataplane_batch_stats_collect(&batch_stats);
-        batch_stats_format_avg(rx_avg, sizeof(rx_avg), batch_stats.rx_total,
-            batch_stats.rx_polls);
-        batch_stats_format_avg(qm_avg, sizeof(qm_avg), batch_stats.qm_total,
-            batch_stats.qm_polls);
-        batch_stats_format_avg(qs_avg, sizeof(qs_avg), batch_stats.qs_total,
-            batch_stats.qs_polls);
-        printf("stats: drops=%" PRIu64 " k_rexmit=%" PRIu64 " ecn=%" PRIu64
-               " acks=%" PRIu64 " rx_batch_avg=%s qman_batch_avg=%s"
-               " queues_batch_avg=%s\n",
-               kstats.drops, kstats.kernel_rexmit, kstats.ecn_marked,
-               kstats.acks, rx_avg, qm_avg, qs_avg);
-#else
-        printf("stats: drops=%" PRIu64 " k_rexmit=%" PRIu64 " ecn=%" PRIu64
-               " acks=%" PRIu64 "\n",
-               kstats.drops, kstats.kernel_rexmit, kstats.ecn_marked,
-               kstats.acks);
-#endif
-        fflush(stdout);
-      }
-      
-      last_print = cur_ts;
     }
   }
 
   return EXIT_SUCCESS;
+}
+
+static void slowpath_print_stats(void)
+{
+  uint64_t drops, kernel_rexmit, ecn_marked, acks;
+
+  if (config.quiet)
+    return;
+
+  drops = __atomic_load_n(&kstats.drops, __ATOMIC_RELAXED);
+  kernel_rexmit = __atomic_load_n(&kstats.kernel_rexmit, __ATOMIC_RELAXED);
+  ecn_marked = __atomic_load_n(&kstats.ecn_marked, __ATOMIC_RELAXED);
+  acks = __atomic_load_n(&kstats.acks, __ATOMIC_RELAXED);
+
+#ifdef BATCH_SIZE_STATS
+  {
+    struct dataplane_batch_stats batch_stats;
+    char rx_avg[32], qm_avg[32], qs_avg[32];
+
+    dataplane_batch_stats_collect(&batch_stats);
+    batch_stats_format_avg(rx_avg, sizeof(rx_avg), batch_stats.rx_total,
+        batch_stats.rx_polls);
+    batch_stats_format_avg(qm_avg, sizeof(qm_avg), batch_stats.qm_total,
+        batch_stats.qm_polls);
+    batch_stats_format_avg(qs_avg, sizeof(qs_avg), batch_stats.qs_total,
+        batch_stats.qs_polls);
+    printf("stats: drops=%" PRIu64 " k_rexmit=%" PRIu64 " ecn=%" PRIu64
+           " acks=%" PRIu64 " rx_batch_avg=%s qman_batch_avg=%s"
+           " queues_batch_avg=%s\n",
+           drops, kernel_rexmit, ecn_marked, acks, rx_avg, qm_avg, qs_avg);
+  }
+#else
+  printf("stats: drops=%" PRIu64 " k_rexmit=%" PRIu64 " ecn=%" PRIu64
+         " acks=%" PRIu64 "\n",
+         drops, kernel_rexmit, ecn_marked, acks);
+#endif
+
+  fflush(stdout);
+}
+
+/* Run budget control on a dedicated lcore so slow-path control work cannot
+ * delay updates. */
+static int budget_thread(void *arg)
+{
+  const uint64_t tsc_per_us = util_timeout_tsc_per_us();
+  const uint64_t update_period_tsc = config.bu_update_freq * tsc_per_us;
+  const uint64_t print_period_tsc = 1000000ULL * tsc_per_us;
+  uint64_t next_update = 0;
+  uint64_t next_print;
+  uint64_t now;
+
+  (void) arg;
+
+  {
+    char name[17];
+    snprintf(name, sizeof(name), "stcp-budget");
+    pthread_setname_np(pthread_self(), name);
+  }
+
+  now = util_rdtsc();
+  next_print = now + print_period_tsc;
+
+  if (update_period_tsc != 0)
+  {
+    next_update = now + update_period_tsc;
+  }
+
+  budget_update(now);
+
+  while (exited == 0)
+  {
+    now = util_rdtsc();
+
+    if (update_period_tsc == 0 || now >= next_update)
+    {
+      budget_update(now);
+      if (update_period_tsc != 0)
+      {
+        budget_thread_advance_deadline(&next_update, update_period_tsc, now);
+      }
+    }
+
+    if (now >= next_print)
+    {
+      slowpath_print_stats();
+      budget_thread_advance_deadline(&next_print, print_period_tsc, now);
+    }
+
+    if ((update_period_tsc == 0 || now < next_update) && now < next_print)
+    {
+      rte_pause();
+    }
+  }
+
+  return 0;
+}
+
+static void budget_thread_advance_deadline(uint64_t *deadline,
+    uint64_t period_tsc, uint64_t now)
+{
+  do
+  {
+    *deadline += period_tsc;
+  }
+  while (*deadline <= now);
 }
 
 static void slowpath_block(uint32_t cur_ts)

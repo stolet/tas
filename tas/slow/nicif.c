@@ -152,11 +152,6 @@ unsigned nicif_poll(void)
 
   for (i = 0; i < 512; i++)
   {
-    if (UNLIKELY((i & (BUDGET_INNER_UPDATE_STRIDE - 1)) ==
-        (BUDGET_INNER_UPDATE_STRIDE - 1))) {
-      budget_update(util_rdtsc());
-    }
-
     x = rxq_poll();
     // if (x == -1 && ++nonsuc > 2 * fn_cores)
     //   break;

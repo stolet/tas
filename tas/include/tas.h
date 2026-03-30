@@ -53,7 +53,7 @@ extern _Atomic uint16_t tas_reg_app_count;
 #endif
 extern unsigned fp_cores_max;
 
-int slowpath_main(int threads_launched);
+int slowpath_main(int threads_launched, unsigned budget_lcore);
 
 int shm_preinit(void);
 int shm_init(unsigned num);
