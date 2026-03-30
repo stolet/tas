@@ -597,6 +597,7 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
   for (broke_i = 0; broke_i < broke_n && temp_k == 0; broke_i++)
   {
     vmid = broke_vms[broke_i];
+    p_vm = &ctx->polled_vms[vmid];
     p_vm->nctx = tas_reg_nctx_get(vmid);
     ctx_count = p_vm->nctx;
     if (ctx_count == 0)
@@ -655,7 +656,7 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
 
     end = util_rdtsc();
     cycles[i_v] += end - start;
-    budget_consume(ctx, i_v, i_v);
+    budget_consume(ctx, i_v, cycles[i_v]);
   }
 
 out:
