@@ -116,6 +116,13 @@ void tas_register_appctx(uint16_t vmid, uint16_t ctxid)
     abort();
   }
 
+  if (ctxid != idx) {
+    fprintf(stderr,
+        "tas_register_appctx: non-dense ctx registration vm=%u ctx=%u expected=%u\n",
+        vmid, ctxid, idx);
+    abort();
+  }
+
   atomic_store_explicit(&tas_reg_nctx[vmid], idx + 1,
       memory_order_release);
   atomic_fetch_add_explicit(&tas_reg_topo_gen, 1,

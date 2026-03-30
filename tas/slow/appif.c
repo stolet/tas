@@ -75,7 +75,7 @@ static int uxsocket_init_app_uxfd(int vmid, int *fd, int efd);
 static void *uxsocket_thread(void *arg);
 static void uxsocket_accept_vm();
 static void uxsocket_accept_appvm();
-static void uxsocket_accept_app(int vm_id);
+// static void uxsocket_accept_app(int vm_id);
 static void uxsocket_notify(void);
 static void uxsocket_error(struct application *app);
 static void uxsocket_receive(struct application *app);
@@ -101,12 +101,10 @@ static struct nbqueue ux_to_poll;
 /** Pthread handle for UX socket thread */
 static pthread_t pt_ux;
 
-/** Freelist for NIC doorbells to be allocated to applications. */
-static struct app_doorbell *free_doorbells = NULL;
-/** Next unused application id, used for allocation */
-static uint16_t app_id_next = 0;
 /** Next unused vm id */
 static uint16_t vm_id_next = 0;
+/** Freelist of NIC doorbells to be allocated to applications per VM. */
+static struct app_doorbell *free_doorbells[FLEXNIC_PL_VMST_NUM];
 
 /** Linked list of all application structs */
 static struct application *applications = NULL;
@@ -115,6 +113,7 @@ int appif_init(void)
 {
   struct app_doorbell *adb;
   uint32_t i;
+  uint16_t vmid;
 
   if ((app_uxfds = malloc(FLEXNIC_PL_VMST_NUM * sizeof(int))) == NULL) {
     fprintf(stderr, "appif_init: Failed to allocate memory for group file descriptors.\n");
@@ -125,15 +124,17 @@ int appif_init(void)
     return -1;
   }
 
-  /* create freelist of doorbells (0 is used by kernel) */
-  for (i = FLEXNIC_PL_APPST_CTX_NUM; i > 0; i--) {
-    if ((adb = malloc(sizeof(*adb))) == NULL) {
-      perror("appif_init: malloc doorbell failed");
-      return -1;
+  for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++) {
+    free_doorbells[vmid] = NULL;
+    for (i = FLEXNIC_PL_APPCTX_NUM; i > 0; i--) {
+      if ((adb = malloc(sizeof(*adb))) == NULL) {
+        perror("appif_init: malloc doorbell failed");
+        return -1;
+      }
+      adb->id = (uint16_t) (i - 1);
+      adb->next = free_doorbells[vmid];
+      free_doorbells[vmid] = adb;
     }
-    adb->id = i;
-    adb->next = free_doorbells;
-    free_doorbells = adb;
   }
 
   nbqueue_init(&ux_to_poll);
@@ -441,7 +442,6 @@ static void *uxsocket_thread(void *arg)
   struct epoll_event evs[32];
   struct appif_event *aev;
   struct application *app;
-  struct virtual_machine *vm;
 
   while (1) {
   again:
@@ -461,9 +461,6 @@ static void *uxsocket_thread(void *arg)
         uxsocket_accept_vm();
       } else if (aev->type == EP_LISTEN_APPVM) {
         uxsocket_accept_appvm();
-      } else if (aev->type == EP_LISTEN_APP) {
-        vm = aev->ptr;
-        uxsocket_accept_app(vm->id);
       } else if (aev->type == EP_NOTIFY) {
         uxsocket_notify();
       } else if (aev->type == EP_APP) {
@@ -608,64 +605,64 @@ static void uxsocket_accept_appvm()
   nbqueue_enq(&ux_to_poll, &app->nqe);
 }
 
-static void uxsocket_accept_app(int vm_id)
-{
-  int cfd;
-  struct application *app;
-  struct epoll_event ev;
-  struct appif_event *aev;
+// static void uxsocket_accept_app(int vm_id)
+// {
+//   int cfd;
+//   struct application *app;
+//   struct epoll_event ev;
+//   struct appif_event *aev;
 
-  /* new connection on unix socket */
-  if ((cfd = accept(app_uxfds[vm_id], NULL, NULL)) < 0) {
-    fprintf(stderr, "uxsocket_accept: accept failed\n");
-    return;
-  }
+//   /* new connection on unix socket */
+//   if ((cfd = accept(app_uxfds[vm_id], NULL, NULL)) < 0) {
+//     fprintf(stderr, "uxsocket_accept: accept failed\n");
+//     return;
+//   }
 
-  /* If this is an application running on a VM this is extra
-     work because the proxy has already connected, but we keep
-     this redundant step so that we don't break compatibility
-     with regular applications */
-  if (appif_connect_accept(cfd, tas_info->cores_num,
-      kernel_notifyfd, vm_shm_fd[vm_id]) != 0) {
-    fprintf(stderr, "uxsocket_accept_vm: appif_connect_accept failed.\n");
-    close(cfd);
-    return;
-  }
+//   /* If this is an application running on a VM this is extra
+//      work because the proxy has already connected, but we keep
+//      this redundant step so that we don't break compatibility
+//      with regular applications */
+//   if (appif_connect_accept(cfd, tas_info->cores_num,
+//       kernel_notifyfd, vm_shm_fd[vm_id]) != 0) {
+//     fprintf(stderr, "uxsocket_accept_vm: appif_connect_accept failed.\n");
+//     close(cfd);
+//     return;
+//   }
 
-  /* allocate application struct */
-  if ((app = uxsocket_app_alloc(cfd, app_id_next++, vm_id)) == NULL) {
-    close(cfd);
-    return;
-  }
+//   /* allocate application struct */
+//   if ((app = uxsocket_app_alloc(cfd, app_id_next++, vm_id)) == NULL) {
+//     close(cfd);
+//     return;
+//   }
 
-  if ((aev = malloc(sizeof(struct appif_event))) == NULL)
-  {
-    perror("uxsocket_accept: malloc appif_event failed");
-    free(app->resp);
-    free(app);
-    close(cfd);
-    return;
-  }
+//   if ((aev = malloc(sizeof(struct appif_event))) == NULL)
+//   {
+//     perror("uxsocket_accept: malloc appif_event failed");
+//     free(app->resp);
+//     free(app);
+//     close(cfd);
+//     return;
+//   }
 
-  /* add to epoll */
-  aev->type = EP_APP;
-  aev->ptr = app;
+//   /* add to epoll */
+//   aev->type = EP_APP;
+//   aev->ptr = app;
 
-  ev.events = EPOLLIN | EPOLLRDHUP | EPOLLERR;
-  ev.data.ptr = aev;
-  if (epoll_ctl(epfd, EPOLL_CTL_ADD, cfd, &ev) != 0) {
-    perror("uxsocket_accept: epoll_ctl failed");
-    free(app->resp);
-    free(app);
-    free(aev);
-    close(cfd);
-    return;
-  }
+//   ev.events = EPOLLIN | EPOLLRDHUP | EPOLLERR;
+//   ev.data.ptr = aev;
+//   if (epoll_ctl(epfd, EPOLL_CTL_ADD, cfd, &ev) != 0) {
+//     perror("uxsocket_accept: epoll_ctl failed");
+//     free(app->resp);
+//     free(app);
+//     free(aev);
+//     close(cfd);
+//     return;
+//   }
 
-  tas_register_vm(vm_id);
-  tas_register_app();
-  nbqueue_enq(&ux_to_poll, &app->nqe);
-}
+//   tas_register_vm(vm_id);
+//   tas_register_app();
+//   nbqueue_enq(&ux_to_poll, &app->nqe);
+// }
 
 static int uxsocket_prepare_vmid(uint16_t *vmid)
 {
@@ -846,12 +843,11 @@ static void uxsocket_receive(struct application *app)
     app->resp->flexnic_qs[i].txq_off = off_txq;
   }
 
-  /* allocate doorbell */
-  if ((ctx->doorbell = free_doorbells) == NULL) {
+  if ((ctx->doorbell = free_doorbells[app->vm_id]) == NULL) {
     fprintf(stderr, "uxsocket_receive: allocating doorbell failed\n");
     goto error_dballoc;
   }
-  free_doorbells = ctx->doorbell->next;
+  free_doorbells[app->vm_id] = ctx->doorbell->next;
 
   /* initialize queuepair struct and queues */
   ctx->app = app;

@@ -209,6 +209,13 @@ int nicif_appctx_add(uint16_t vmid, uint16_t appid, uint32_t db,
     return -1;
   }
 
+  if (db >= FLEXNIC_PL_APPCTX_NUM)
+  {
+    fprintf(stderr, "nicif_appctx_add: ctx id too high (%u, max=%u)\n", db,
+        FLEXNIC_PL_APPCTX_NUM);
+    return -1;
+  }
+
   if (ast->ctx_num + 1 >= FLEXNIC_PL_APPST_CTX_NUM)
   {
     fprintf(stderr, "nicif_appctx_add: too many contexts in app\n");

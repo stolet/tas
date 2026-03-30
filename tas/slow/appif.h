@@ -32,8 +32,7 @@
 #include <kernel_appif.h>
 
 struct app_doorbell {
-  uint32_t id;
-  /* only for freelist */
+  uint16_t id;
   struct app_doorbell *next;
 };
 
