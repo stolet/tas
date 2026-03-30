@@ -812,12 +812,12 @@ static void uxsocket_receive(struct application *app)
   kin_qsize = config.app_kin_len;
   kout_qsize = config.app_kout_len;
 
-  /* allocate packet memory for kernel queues */
-  if (packetmem_alloc(kin_qsize, &off_in, &pm_in, SP_MEM_ID) != 0) {
+  /* allocate app-visible queues from the application's VM region */
+  if (packetmem_alloc(kin_qsize, &off_in, &pm_in, app->vm_id) != 0) {
     fprintf(stderr, "uxsocket_receive: packetmem_alloc in failed\n");
     goto error_pktmem_in;
   }
-  if (packetmem_alloc(kout_qsize, &off_out, &pm_out, SP_MEM_ID) != 0) {
+  if (packetmem_alloc(kout_qsize, &off_out, &pm_out, app->vm_id) != 0) {
     fprintf(stderr, "uxsocket_receive: packetmem_alloc out failed\n");
     goto error_pktmem_out;
   }
