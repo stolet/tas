@@ -278,11 +278,6 @@ static int budget_thread(void *arg)
       slowpath_print_stats();
       budget_thread_advance_deadline(&next_print, print_period_tsc, now);
     }
-
-    if ((update_period_tsc == 0 || now < next_update) && now < next_print)
-    {
-      rte_pause();
-    }
   }
 
   return 0;
@@ -291,11 +286,7 @@ static int budget_thread(void *arg)
 static void budget_thread_advance_deadline(uint64_t *deadline,
     uint64_t period_tsc, uint64_t now)
 {
-  do
-  {
-    *deadline += period_tsc;
-  }
-  while (*deadline <= now);
+  *deadline = now + period_tsc;
 }
 
 static void slowpath_block(uint32_t cur_ts)
