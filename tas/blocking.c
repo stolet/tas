@@ -54,8 +54,9 @@ static void notify_core(int cfd, uint64_t *last_ts, uint64_t tsc,
 
 void notify_fastpath_core(unsigned core)
 {
-  notify_core(fp_state->kctx[core].evfd, &fp_state->kctx[core].last_ts,
-      util_rdtsc(), tas_info->poll_cycle_tas);
+  notify_core(fp_state->kctx[core][FLEXNIC_PL_VMST_NUM].evfd,
+      &fp_state->kctx[core][FLEXNIC_PL_VMST_NUM].last_ts, util_rdtsc(),
+      tas_info->poll_cycle_tas);
 }
 
 void notify_app_core(int appfd, uint64_t *last_ts)

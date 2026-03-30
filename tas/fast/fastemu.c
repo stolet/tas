@@ -173,6 +173,7 @@ int dataplane_context_init(struct dataplane_context *ctx)
   
   ctx->counters_total = 0;
   ctx->poll_next_vm = 0;
+  ctx->poll_next_kernel_vm = 0;
 
   ctx->evfd = eventfd(0, EFD_NONBLOCK);
   assert(ctx->evfd != -1);
@@ -180,7 +181,10 @@ int dataplane_context_init(struct dataplane_context *ctx)
   int r = rte_epoll_ctl(RTE_EPOLL_PER_THREAD, EPOLL_CTL_ADD, ctx->evfd, &ctx->ev);
   assert(r == 0);
 
-  fp_state->kctx[ctx->id].evfd = ctx->evfd;
+  for (i = 0; i < FLEXNIC_PL_KCTX_NUM; i++) 
+  {
+    fp_state->kctx[ctx->id][i].evfd = ctx->evfd;
+  }
 
   return 0;
 }
@@ -234,26 +238,17 @@ void dataplane_loop(struct dataplane_context *ctx)
 
     STATS_TSADD(ctx, cyc_rx, rx - start);
    
-    // s_cycs = util_rdtsc();
     n += poll_qman(ctx, ts);
-    // e_cycs = util_rdtsc();
-    // spend_budget(ctx, e_cycs - s_cycs);
    
     STATS_TS(qm);
     STATS_TSADD(ctx, cyc_qm, qm - rx);
    
-    // s_cycs = util_rdtsc();
     n += poll_queues(ctx, ts);
-    // e_cycs = util_rdtsc();
-    // spend_budget(ctx, e_cycs - s_cycs);
   
     STATS_TS(qs);
     STATS_TSADD(ctx, cyc_qs, qs - qm);
   
-    // s_cycs = util_rdtsc();
     n += poll_kernel(ctx, ts);
-    // e_cycs = util_rdtsc();
-    // spend_budget(ctx, e_cycs - s_cycs);
 
     /* flush transmit buffer */
     tx_flush(ctx);
@@ -531,7 +526,7 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
 
   max = bufcache_prealloc(ctx, max, &handles);
 
-  vm_count  = tas_reg_nvm_get();
+  vm_count = tas_reg_nvm_get();
   if (vm_count == 0 || max == 0) 
   {
     total = 0;
@@ -672,9 +667,9 @@ out:
 static unsigned poll_kernel(struct dataplane_context *ctx, uint32_t ts)
 {
   struct network_buf_handle **handles;
-  unsigned total = 0;
-  uint16_t max, k = 0;
-  int ret;
+  uint64_t start, end;
+  uint16_t max, k = 0, vmid;
+  int i, ret, vm_count, broke_n, broke_i, total = 0;
 
   max = BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_num < max)
@@ -684,17 +679,41 @@ static unsigned poll_kernel(struct dataplane_context *ctx, uint32_t ts)
   /* allocate buffers contents */
   max = bufcache_prealloc(ctx, max, &handles);
 
-  for (k = 0; k < max;)
-  {
-    ret = fast_kernel_poll(ctx, handles[k], ts);
+  ret = fast_kernel_poll(ctx, FLEXNIC_PL_VMST_NUM, handles[k], ts);
+  if (ret == 0)
+    k++;
+  if (ret >= 0)
+    total++;
 
+  vm_count = tas_reg_nvm_get();
+  if (vm_count == 0)
+    return total;
+  
+  for (i = 0; i < vm_count && k < max; i++)
+  {
+    start = util_rdtsc();
+    vmid = (ctx->poll_next_kernel_vm + i) % vm_count;
+    if (!budget_available(ctx, vmid))
+    {
+      broke_n++;
+      continue;
+    }
+    
+    ret = fast_kernel_poll(ctx, vmid, handles[k], ts);
+    if (ret < 0) 
+      continue;
+    
     if (ret == 0)
       k++;
-    else if (ret < 0)
-      break;
-
-    total++;
+    
+    if (ret >= 0)
+    {
+      total++;
+      end = util_rdtsc();
+      budget_consume(ctx, vmid, end - start);
+    }
   }
+  ctx->poll_next_kernel_vm = (ctx->poll_next_kernel_vm + i) % vm_count;
 
   /* apply buffer reservations */
   bufcache_alloc(ctx, k);

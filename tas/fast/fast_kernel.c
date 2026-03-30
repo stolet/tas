@@ -40,7 +40,7 @@ static inline void inject_tcp_ts_gre(void *buf, uint16_t len, uint32_t ts,
     struct network_buf_handle *nbh);
 
 int fast_kernel_poll(struct dataplane_context *ctx,
-    struct network_buf_handle *nbh, uint32_t ts)
+    uint16_t vmid, struct network_buf_handle *nbh, uint32_t ts)
 {
   void *buf = network_buf_buf(nbh);
   struct flextcp_pl_ktx *ktx;
@@ -48,7 +48,7 @@ int fast_kernel_poll(struct dataplane_context *ctx,
   uint32_t flow_id, len;
   int ret = -1;
 
-  kctx = &fp_state->kctx[ctx->id];
+  kctx = &fp_state->kctx[ctx->id][vmid];
 
 
   /* stop if context is not in use */
@@ -119,7 +119,9 @@ int fast_kernel_poll(struct dataplane_context *ctx,
 void fast_kernel_packet(struct dataplane_context *ctx,
     struct network_buf_handle *nbh, void *fsp)
 {
-  struct flextcp_pl_appctx *kctx = &fp_state->kctx[ctx->id];
+  struct flextcp_pl_flowst *fs = fsp;
+  uint16_t vmid = (fs == NULL ? FLEXNIC_PL_VMST_NUM : fs->vm_id);
+  struct flextcp_pl_appctx *kctx = &fp_state->kctx[ctx->id][vmid];
   struct flextcp_pl_krx *krx;
   uint16_t len;
 

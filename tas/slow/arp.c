@@ -274,7 +274,8 @@ static inline int response_tx(const void *dst_mac, uint32_t dst_ip)
   uint32_t new_tail;
 
   /* allocate tx buffer */
-  if (nicif_tx_alloc(sizeof(*parp_out), (void **) &parp_out, &new_tail) != 0) {
+  if (nicif_tx_alloc(sizeof(*parp_out), (void **) &parp_out,
+      FLEXNIC_PL_VMST_NUM, &new_tail) != 0) {
     return -1;
   }
 
@@ -306,7 +307,8 @@ static inline int request_tx(uint32_t dst_ip)
   uint64_t dst_mac = 0xffffffffffffULL;
 
   /* allocate tx buffer */
-  if (nicif_tx_alloc(sizeof(*parp_out), (void **) &parp_out, &new_tail) != 0) {
+  if (nicif_tx_alloc(sizeof(*parp_out), (void **) &parp_out,
+      FLEXNIC_PL_VMST_NUM, &new_tail) != 0) {
     return -1;
   }
 

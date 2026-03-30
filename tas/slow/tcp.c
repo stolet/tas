@@ -1463,7 +1463,7 @@ out:
 static inline int send_control_raw(uint64_t remote_mac, uint32_t remote_ip,
     uint16_t remote_port, uint16_t local_port, uint32_t local_seq,
     uint32_t remote_seq, uint16_t flags, int ts_opt, uint32_t ts_echo,
-    uint16_t mss_opt)
+    uint16_t mss_opt, uint8_t vmid)
 {
   uint32_t new_tail;
   struct pkt_tcp *p;
@@ -1482,7 +1482,7 @@ static inline int send_control_raw(uint64_t remote_mac, uint32_t remote_ip,
   len = sizeof(*p) + optlen;
 
   /** allocate send buffer */
-  if (nicif_tx_alloc(len, (void **) &p, &new_tail) != 0) {
+  if (nicif_tx_alloc(len, (void **) &p, vmid, &new_tail) != 0) {
     fprintf(stderr, "send_control failed\n");
     return -1;
   }
@@ -1546,7 +1546,7 @@ static inline int send_control_raw_gre(uint64_t remote_mac,
     uint32_t in_local_ip, uint32_t in_remote_ip,
     uint16_t remote_port, uint16_t local_port, uint32_t local_seq,
     uint32_t remote_seq, uint16_t flags, int ts_opt, uint32_t ts_echo,
-    uint16_t mss_opt)
+    uint16_t mss_opt, uint8_t vmid)
 {
   uint32_t new_tail;
   struct pkt_gre *p;
@@ -1565,7 +1565,7 @@ static inline int send_control_raw_gre(uint64_t remote_mac,
   len = sizeof(*p) + optlen;
 
   /** allocate send buffer */
-  if (nicif_tx_alloc(len, (void **) &p, &new_tail) != 0) {
+  if (nicif_tx_alloc(len, (void **) &p, vmid, &new_tail) != 0) {
     fprintf(stderr, "send_control_gre failed\n");
     return -1;
   }
@@ -1646,7 +1646,7 @@ static inline int send_control(const struct connection *conn, uint16_t flags,
 {
   return send_control_raw(conn->remote_mac, conn->out_remote_ip,
       conn->remote_port, conn->local_port, conn->local_seq, conn->remote_seq,
-      flags, ts_opt, ts_echo, mss_opt);
+      flags, ts_opt, ts_echo, mss_opt, (uint8_t) conn->ctx->app->vm_id);
 }
 
 static inline int send_control_gre(const struct connection *conn, uint16_t flags,
@@ -1657,7 +1657,7 @@ static inline int send_control_gre(const struct connection *conn, uint16_t flags
       conn->in_local_ip, conn->in_remote_ip,
       conn->remote_port,
       conn->local_port, conn->local_seq, conn->remote_seq, flags, ts_opt,
-      ts_echo, mss_opt);
+      ts_echo, mss_opt, (uint8_t) conn->ctx->app->vm_id);
 }
 
 static inline int send_reset(const struct pkt_tcp *p,
@@ -1675,7 +1675,7 @@ static inline int send_reset(const struct pkt_tcp *p,
   memcpy(&remote_mac, &p->eth.src, ETH_ADDR_LEN);
   return send_control_raw(remote_mac, f_beui32(p->ip.src), f_beui16(p->tcp.src),
       f_beui16(p->tcp.dest), f_beui32(p->tcp.ackno), f_beui32(p->tcp.seqno) + 1,
-      TAS_TCP_RST | TAS_TCP_ACK, ts_opt, ts_val, 0);
+      TAS_TCP_RST | TAS_TCP_ACK, ts_opt, ts_val, 0, FLEXNIC_PL_VMST_NUM);
 }
 
 static inline int send_reset_gre(const struct pkt_gre *p,
@@ -1696,7 +1696,7 @@ static inline int send_reset_gre(const struct pkt_gre *p,
       f_beui32(p->in_ip.dest), f_beui32(p->out_ip.dest),
       f_beui16(p->tcp.src), f_beui16(p->tcp.dest),
       f_beui32(p->tcp.ackno), f_beui32(p->tcp.seqno) + 1,
-      TAS_TCP_RST | TAS_TCP_ACK, ts_opt, ts_val, 0);
+      TAS_TCP_RST | TAS_TCP_ACK, ts_opt, ts_val, 0, FLEXNIC_PL_VMST_NUM);
 }
 
 static inline int parse_options(const struct pkt_tcp *p, uint16_t len,

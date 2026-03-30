@@ -306,12 +306,14 @@ int nicif_connection_retransmit(uint32_t f_id, uint32_t vm_id, uint16_t core);
  *
  * @param len     Length of packet to be sent
  * @param buf     Pointer to location where base address will be stored
+ * @param vmid    Kernel TX queue identifier.
+ *                Use `FLEXNIC_PL_VMST_NUM` for TAS-originated control traffic.
  * @param opaque  Pointer to location to store opaque value that needs to be
  *                passed to nicif_tx_send().
  *
  * @return 0 on success, <0 else
  */
-int nicif_tx_alloc(uint16_t len, void **buf, uint32_t *opaque);
+int nicif_tx_alloc(uint16_t len, void **buf, uint8_t vmid, uint32_t *opaque);
 
 /**
  * Allocate buffer for packet destined to OvSt.

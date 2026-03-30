@@ -31,7 +31,7 @@
 /*****************************************************************************/
 /* fast_kernel.c */
 int fast_kernel_poll(struct dataplane_context *ctx,
-    struct network_buf_handle *nbh, uint32_t ts);
+    uint16_t vmid, struct network_buf_handle *nbh, uint32_t ts);
 void fast_kernel_packet(struct dataplane_context *ctx,
     struct network_buf_handle *nbh, void *fsp);
 

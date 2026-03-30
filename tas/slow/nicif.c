@@ -41,6 +41,8 @@
 #include <rte_hash_crc.h>
 
 #define PKTBUF_SIZE 1536
+#define KERNEL_QIDX(core, vmid) \
+  ((uint32_t) (core) * FLEXNIC_PL_KCTX_NUM + (uint32_t) (vmid))
 
 struct flow_id_item
 {
@@ -49,7 +51,7 @@ struct flow_id_item
 };
 
 static int adminq_init();
-static int adminq_init_core(uint16_t core);
+static int adminq_init_core_vm(uint16_t core, uint16_t vmid);
 static int adminq_init_ovs();
 static inline int rxq_poll(void);
 static inline int ovsrxq_poll(void);
@@ -63,7 +65,7 @@ static inline void process_ovs_rx_upcall(const void *buf, uint16_t len,
 static inline void process_ovs_tx_upcall(volatile struct flextcp_pl_ote *ote,
     struct connection *conn);
 static inline volatile struct flextcp_pl_ktx *ktx_try_alloc(uint32_t core,
-    struct nic_buffer **buf, uint32_t *new_tail);
+    uint16_t vmid, struct nic_buffer **buf, uint32_t *new_tail);
 static inline volatile struct flextcp_pl_toe *
 toetx_try_alloc(uint32_t core, struct nic_buffer **pbuf,
     uint32_t *new_tail);
@@ -505,16 +507,17 @@ int nicif_connection_winretransmit(uint32_t f_id, uint32_t vm_id, uint16_t flow_
 {
   volatile struct flextcp_pl_ktx *ktx;
   struct nic_buffer *buf;
-  uint32_t tail;
+  uint32_t qidx, tail;
   uint16_t core = fp_state->flow_group_steering[flow_group];
 
   if (tas_get_budget(vm_id, core) <= 0)
     return -1;
 
-  if ((ktx = ktx_try_alloc(core, &buf, &tail)) == NULL)
+  if ((ktx = ktx_try_alloc(core, vm_id, &buf, &tail)) == NULL)
     return -1;
 
-  txq_tail[core] = tail;
+  qidx = KERNEL_QIDX(core, vm_id);
+  txq_tail[qidx] = tail;
 
   ktx->msg.connretran.flow_id = f_id;
   MEM_BARRIER();
@@ -530,17 +533,18 @@ int nicif_connection_retransmit(uint32_t f_id, uint32_t vm_id, uint16_t flow_gro
 {
   volatile struct flextcp_pl_ktx *ktx;
   struct nic_buffer *buf;
-  uint32_t tail;
+  uint32_t qidx, tail;
   uint16_t core = fp_state->flow_group_steering[flow_group];
 
   if (tas_get_budget(vm_id, core) <= 0)
     return -1;
 
-  if ((ktx = ktx_try_alloc(core, &buf, &tail)) == NULL)
+  if ((ktx = ktx_try_alloc(core, vm_id, &buf, &tail)) == NULL)
   {
     return -1;
   }
-  txq_tail[core] = tail;
+  qidx = KERNEL_QIDX(core, vm_id);
+  txq_tail[qidx] = tail;
 
   ktx->msg.connretran.flow_id = f_id;
   MEM_BARRIER();
@@ -552,18 +556,26 @@ int nicif_connection_retransmit(uint32_t f_id, uint32_t vm_id, uint16_t flow_gro
 }
 
 /** Allocate transmit buffer */
-int nicif_tx_alloc(uint16_t len, void **pbuf, uint32_t *opaque)
+int nicif_tx_alloc(uint16_t len, void **pbuf, uint8_t vmid, uint32_t *opaque)
 {
   volatile struct flextcp_pl_ktx *ktx;
   struct nic_buffer *buf;
+  uint32_t qidx;
 
-  if ((ktx = ktx_try_alloc(0, &buf, opaque)) == NULL)
+  if (vmid >= FLEXNIC_PL_KCTX_NUM) {
+    fprintf(stderr, "nicif_tx_alloc: invalid kernel queue id %u\n", vmid);
+    return -1;
+  }
+
+  if ((ktx = ktx_try_alloc(0, vmid, &buf, opaque)) == NULL)
   {
     return -1;
   }
 
+  qidx = KERNEL_QIDX(0, vmid);
   ktx->msg.packet.addr = buf->addr;
   ktx->msg.packet.len = len;
+  *opaque += qidx * txq_len;
   *pbuf = buf->buf;
   return 0;
 }
@@ -588,19 +600,22 @@ int nicif_tasovs_tx_alloc(uint16_t len, void **pbuf, uint32_t *opaque)
 /** Actually send out transmit buffer (lens need to match) */
 void nicif_tx_send(uint32_t opaque, int no_ts)
 {
-  uint32_t tail = (opaque == 0 ? txq_len - 1 : opaque - 1);
-  volatile struct flextcp_pl_ktx *ktx = &txq_base[0][tail];
+  uint32_t qidx = opaque / txq_len;
+  uint32_t next = opaque % txq_len;
+  uint32_t tail = (next == 0 ? txq_len - 1 : next - 1);
+  uint32_t core = qidx / FLEXNIC_PL_KCTX_NUM;
+  volatile struct flextcp_pl_ktx *ktx = &txq_base[qidx][tail];
 
   MEM_BARRIER();
   ktx->type = (!no_ts ? FLEXTCP_PL_KTX_PACKET : FLEXTCP_PL_KTX_PACKET_NOTS);
-  txq_tail[0] = opaque;
+  txq_tail[qidx] = next;
 
-  notify_fastpath_core(0);
+  notify_fastpath_core(core);
 }
 
 static int adminq_init()
 {
-  uint32_t i;
+  uint32_t i, vmid, num_queues;
 
   rxq_len = config.nic_rx_len;
   txq_len = config.nic_tx_len;
@@ -613,12 +628,13 @@ static int adminq_init()
   tasovs_tx_head = 0;
   ovstas_rx_tail = 0;
   ovstas_tx_tail = 0;
-  rxq_bufs = calloc(fn_cores, sizeof(*rxq_bufs));
-  rxq_base = calloc(fn_cores, sizeof(*rxq_base));
-  rxq_tail = calloc(fn_cores, sizeof(*rxq_tail));
-  txq_bufs = calloc(fn_cores, sizeof(*txq_bufs));
-  txq_base = calloc(fn_cores, sizeof(*txq_base));
-  txq_tail = calloc(fn_cores, sizeof(*txq_tail));
+  num_queues = fn_cores * FLEXNIC_PL_KCTX_NUM;
+  rxq_bufs = calloc(num_queues, sizeof(*rxq_bufs));
+  rxq_base = calloc(num_queues, sizeof(*rxq_base));
+  rxq_tail = calloc(num_queues, sizeof(*rxq_tail));
+  txq_bufs = calloc(num_queues, sizeof(*txq_bufs));
+  txq_base = calloc(num_queues, sizeof(*txq_base));
+  txq_tail = calloc(num_queues, sizeof(*txq_tail));
   if (rxq_bufs == NULL || rxq_base == NULL || rxq_tail == NULL ||
       txq_bufs == NULL || txq_base == NULL || txq_tail == NULL)
   {
@@ -630,8 +646,10 @@ static int adminq_init()
 
   for (i = 0; i < fn_cores; i++)
   {
-    if (adminq_init_core(i) != 0)
-      return -1;
+    for (vmid = 0; vmid < FLEXNIC_PL_KCTX_NUM; vmid++) {
+      if (adminq_init_core_vm(i, vmid) != 0)
+        return -1;
+    }
   }
 
   if (adminq_init_ovs() != 0)
@@ -640,21 +658,22 @@ static int adminq_init()
   return 0;
 }
 
-static int adminq_init_core(uint16_t core)
+static int adminq_init_core_vm(uint16_t core, uint16_t vmid)
 {
   struct packetmem_handle *pm_bufs, *pm_rx, *pm_tx;
   uintptr_t off_bufs, off_rx, off_tx;
+  uint32_t qidx = KERNEL_QIDX(core, vmid);
   size_t i, sz_bufs, sz_rx, sz_tx;
 
-  if ((rxq_bufs[core] = calloc(config.nic_rx_len, sizeof(**rxq_bufs))) == NULL)
+  if ((rxq_bufs[qidx] = calloc(config.nic_rx_len, sizeof(**rxq_bufs))) == NULL)
   {
     fprintf(stderr, "adminq_init: calloc rx bufs failed\n");
     return -1;
   }
-  if ((txq_bufs[core] = calloc(config.nic_tx_len, sizeof(**txq_bufs))) == NULL)
+  if ((txq_bufs[qidx] = calloc(config.nic_tx_len, sizeof(**txq_bufs))) == NULL)
   {
     fprintf(stderr, "adminq_init: calloc tx bufs failed\n");
-    free(rxq_bufs[core]);
+    free(rxq_bufs[qidx]);
     return -1;
   }
 
@@ -662,8 +681,8 @@ static int adminq_init_core(uint16_t core)
   if (packetmem_alloc(sz_bufs, &off_bufs, &pm_bufs, SP_MEM_ID) != 0)
   {
     fprintf(stderr, "adminq_init: packetmem_alloc bufs failed\n");
-    free(txq_bufs[core]);
-    free(rxq_bufs[core]);
+    free(txq_bufs[qidx]);
+    free(rxq_bufs[qidx]);
     return -1;
   }
 
@@ -672,8 +691,8 @@ static int adminq_init_core(uint16_t core)
   {
     fprintf(stderr, "adminq_init: packetmem_alloc tx failed\n");
     packetmem_free(pm_bufs, SP_MEM_ID);
-    free(txq_bufs[core]);
-    free(rxq_bufs[core]);
+    free(txq_bufs[qidx]);
+    free(rxq_bufs[qidx]);
     return -1;
   }
   sz_tx = config.nic_tx_len * sizeof(struct flextcp_pl_ktx);
@@ -682,36 +701,37 @@ static int adminq_init_core(uint16_t core)
     fprintf(stderr, "adminq_init: packetmem_alloc tx failed\n");
     packetmem_free(pm_rx, SP_MEM_ID);
     packetmem_free(pm_bufs, SP_MEM_ID);
-    free(txq_bufs[core]);
-    free(rxq_bufs[core]);
+    free(txq_bufs[qidx]);
+    free(rxq_bufs[qidx]);
     return -1;
   }
 
-  rxq_base[core] = (volatile struct flextcp_pl_krx *)((uint8_t *)vm_shm[SP_MEM_ID] + off_rx);
-  txq_base[core] = (volatile struct flextcp_pl_ktx *)((uint8_t *)vm_shm[SP_MEM_ID] + off_tx);
+  rxq_base[qidx] = (volatile struct flextcp_pl_krx *)((uint8_t *)vm_shm[SP_MEM_ID] + off_rx);
+  txq_base[qidx] = (volatile struct flextcp_pl_ktx *)((uint8_t *)vm_shm[SP_MEM_ID] + off_tx);
 
-  memset((void *)rxq_base[core], 0, sz_rx);
-  memset((void *)txq_base[core], 0, sz_tx);
+  memset((void *)rxq_base[qidx], 0, sz_rx);
+  memset((void *)txq_base[qidx], 0, sz_tx);
 
   for (i = 0; i < rxq_len; i++)
   {
-    rxq_bufs[core][i].addr = off_bufs;
-    rxq_bufs[core][i].buf = (uint8_t *)vm_shm[SP_MEM_ID] + off_bufs;
-    rxq_base[core][i].addr = off_bufs;
+    rxq_bufs[qidx][i].addr = off_bufs;
+    rxq_bufs[qidx][i].buf = (uint8_t *)vm_shm[SP_MEM_ID] + off_bufs;
+    rxq_base[qidx][i].addr = off_bufs;
     off_bufs += PKTBUF_SIZE;
   }
   for (i = 0; i < txq_len; i++)
   {
-    txq_bufs[core][i].addr = off_bufs;
-    txq_bufs[core][i].buf = (uint8_t *)vm_shm[SP_MEM_ID] + off_bufs;
+    txq_bufs[qidx][i].addr = off_bufs;
+    txq_bufs[qidx][i].buf = (uint8_t *)vm_shm[SP_MEM_ID] + off_bufs;
     off_bufs += PKTBUF_SIZE;
   }
 
-  fp_state->kctx[core].rx_base = off_rx;
-  fp_state->kctx[core].tx_base = off_tx;
+  fp_state->kctx[core][vmid].vm_id = vmid;
+  fp_state->kctx[core][vmid].rx_base = off_rx;
+  fp_state->kctx[core][vmid].tx_base = off_tx;
   MEM_BARRIER();
-  fp_state->kctx[core].tx_len = sz_tx;
-  fp_state->kctx[core].rx_len = sz_rx;
+  fp_state->kctx[core][vmid].tx_len = sz_tx;
+  fp_state->kctx[core][vmid].rx_len = sz_rx;
 
   return 0;
 }
@@ -899,17 +919,17 @@ static int adminq_init_ovs()
 
 static inline int rxq_poll(void)
 {
-  uint32_t old_tail, tail, core;
+  uint32_t old_tail, tail, qidx;
   volatile struct flextcp_pl_krx *krx;
   struct nic_buffer *buf;
   uint8_t type;
   int ret = 0;
 
-  core = rxq_next;
-  old_tail = tail = rxq_tail[core];
-  krx = &rxq_base[core][tail];
-  buf = &rxq_bufs[core][tail];
-  rxq_next = (core + 1) % fn_cores;
+  qidx = rxq_next;
+  old_tail = tail = rxq_tail[qidx];
+  krx = &rxq_base[qidx][tail];
+  buf = &rxq_bufs[qidx][tail];
+  rxq_next = (qidx + 1) % (fn_cores * FLEXNIC_PL_KCTX_NUM);
 
   /* no queue entry here */
   type = krx->type;
@@ -945,7 +965,7 @@ static inline int rxq_poll(void)
   }
 
   krx->type = 0;
-  rxq_tail[core] = tail;
+  rxq_tail[qidx] = tail;
 
   return ret;
 }
@@ -1242,11 +1262,13 @@ static inline void process_ovs_tx_upcall(volatile struct flextcp_pl_ote *ote,
 }
 
 static inline volatile struct flextcp_pl_ktx *
-ktx_try_alloc(uint32_t core, struct nic_buffer **pbuf, uint32_t *new_tail)
+ktx_try_alloc(uint32_t core, uint16_t vmid, struct nic_buffer **pbuf,
+    uint32_t *new_tail)
 {
-  uint32_t tail = txq_tail[core];
-  volatile struct flextcp_pl_ktx *ktx = &txq_base[core][tail];
-  struct nic_buffer *buf = &txq_bufs[core][tail];
+  uint32_t qidx = KERNEL_QIDX(core, vmid);
+  uint32_t tail = txq_tail[qidx];
+  volatile struct flextcp_pl_ktx *ktx = &txq_base[qidx][tail];
+  struct nic_buffer *buf = &txq_bufs[qidx][tail];
 
   /* queue is full */
   if (ktx->type != 0)

@@ -150,6 +150,7 @@ struct dataplane_context {
   /********************************************************/
   /* polling queues topology */
   uint32_t poll_next_vm;
+  uint32_t poll_next_kernel_vm;
   struct polled_vm polled_vms[FLEXNIC_PL_VMST_NUM];
 
   /********************************************************/

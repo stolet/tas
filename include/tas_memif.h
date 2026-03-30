@@ -253,6 +253,7 @@ STATIC_ASSERT(sizeof(struct flextcp_pl_atx) == 16, atx_size);
 /* Internal flexnic memory */
 
 #define FLEXNIC_PL_VMST_NUM         6
+#define FLEXNIC_PL_KCTX_NUM        (FLEXNIC_PL_VMST_NUM + 1)
 #define FLEXNIC_PL_APPST_NUM        8
 #define FLEXNIC_PL_APPST_CTX_NUM   62
 #define FLEXNIC_PL_APPST_CTX_MCS   32
@@ -460,7 +461,8 @@ struct flextcp_pl_mem {
   struct flextcp_pl_flowhte flowht[FLEXNIC_PL_FLOWHT_ENTRIES];
 
   /* registers for kernel queues */
-  struct flextcp_pl_appctx kctx[FLEXNIC_PL_APPST_CTX_MCS];
+  struct flextcp_pl_appctx kctx[FLEXNIC_PL_APPST_CTX_MCS]
+      [FLEXNIC_PL_KCTX_NUM];
 
   /* registers for application state */
   struct flextcp_pl_appst appst[FLEXNIC_PL_APPST_NUM];

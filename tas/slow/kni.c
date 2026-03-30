@@ -153,7 +153,8 @@ unsigned kni_poll(void)
 
   n = rte_kni_rx_burst(kni_if, &mb, 1);
   if (n == 1) {
-    if (nicif_tx_alloc(rte_pktmbuf_pkt_len(mb), &buf, &op) == 0) {
+    if (nicif_tx_alloc(rte_pktmbuf_pkt_len(mb), &buf,
+        FLEXNIC_PL_VMST_NUM, &op) == 0) {
       memcpy(buf, rte_pktmbuf_mtod(mb, void *), rte_pktmbuf_pkt_len(mb));
       nicif_tx_send(op, 1);
     } else {
