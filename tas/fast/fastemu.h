@@ -36,10 +36,11 @@ void fast_kernel_packet(struct dataplane_context *ctx,
     struct network_buf_handle *nbh, void *fsp);
 
 /* fast_appctx.c */
-void fast_appctx_poll_pf(struct flextcp_pl_appctx *actx, uint16_t vmid);
+void fast_appctx_poll_pf(struct dataplane_context *ctx, 
+    uint16_t vmid, uint32_t ctxid);
 int fast_appctx_poll_fetch(struct dataplane_context *ctx,
-    struct flextcp_pl_appctx *actx, uint32_t actx_id, uint16_t vm_id,
-    void **pqe, bool spend_budget);
+    uint32_t actxid, uint16_t vmid,
+    void **pqe, uint8_t spend_budget);
 int fast_appctx_poll_bump(struct dataplane_context *ctx, void *pqe,
     struct network_buf_handle *nbh, int *vmid, uint32_t ts);
 
@@ -47,7 +48,8 @@ int fast_appctx_poll(struct dataplane_context *ctx, uint32_t id,
     struct network_buf_handle *nbh, uint32_t ts);
 int fast_actx_rxq_alloc(struct dataplane_context *ctx,
     struct flextcp_pl_appctx *actx, struct flextcp_pl_arx **arx, uint16_t vmid);
-int fast_actx_rxq_probe(struct flextcp_pl_appctx *actx, uint16_t vmid);
+int fast_actx_rxq_probe(struct dataplane_context *ctx, 
+    uint16_t vmid, uint32_t actxid);
 
 /* fast_flows.c */
 void fast_flows_qman_pf(struct dataplane_context *ctx, uint32_t *queues,

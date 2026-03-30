@@ -34,27 +34,18 @@
 #include "fastemu.h"
 
 
-int fast_appctx_poll_fetch(struct dataplane_context *ctx,
-    struct flextcp_pl_appctx *actx, uint32_t actx_id, uint16_t vm_id,
-    void **pqe, bool spend_budget);
-
-int fast_actx_rxq_probe(struct flextcp_pl_appctx *actx, uint16_t vm_id);
-
-static inline struct flextcp_pl_appctx *fast_appctx_lookup(
-    struct dataplane_context *ctx, uint16_t vmid, uint32_t cid)
+void fast_appctx_poll_pf(struct dataplane_context *ctx, 
+    uint16_t vmid, uint32_t ctxid)
 {
-  return &fp_state->appctx[ctx->id][vmid][cid];
-}
-
-void inline fast_appctx_poll_pf(struct flextcp_pl_appctx *actx, uint16_t vmid)
-{
+  struct flextcp_pl_appctx *actx = &fp_state->appctx[ctx->id][vmid][ctxid];
   rte_prefetch0(dma_pointer(actx->tx_base + actx->tx_head, 1, vmid));
 }
 
 int fast_appctx_poll_fetch(struct dataplane_context *ctx,
-    struct flextcp_pl_appctx *actx, uint32_t actx_id, uint16_t vm_id,
-    void **pqe, bool spend_budget)
+    uint32_t actxid, uint16_t vmid,
+    void **pqe, uint8_t spend_budget)
 {
+  struct flextcp_pl_appctx *actx = &fp_state->appctx[ctx->id][vmid][actxid];
   struct flextcp_pl_atx *atx;
   uint8_t type;
   uint32_t flow_id;
@@ -65,23 +56,26 @@ int fast_appctx_poll_fetch(struct dataplane_context *ctx,
     return -1;
 
   tx_head = actx->tx_head;
-  atx = dma_pointer(actx->tx_base + tx_head, sizeof(*atx), vm_id);
+  atx = dma_pointer(actx->tx_base + tx_head, sizeof(*atx), vmid);
 
   type = atx->type;
   MEM_BARRIER();
 
-  if (type == 0) {
+  if (type == 0) 
+  {
     return -1;
-  } else if (type != FLEXTCP_PL_ATX_CONNUPDATE) {
-    fprintf(stderr, "fast_appctx_poll: unknown type: %u id=%u\n", type,
-        actx_id);
+  } 
+  else if (type != FLEXTCP_PL_ATX_CONNUPDATE) 
+  {
+    fprintf(stderr, "fast_appctx_poll: unknown type: %u id=%u\n", type, actxid);
     abort();
   }
   *pqe = atx;
 
   /* update RX/TX queue pointers for connection */
   flow_id = atx->msg.connupdate.flow_id;
-  if (flow_id >= FLEXNIC_PL_FLOWST_NUM) {
+  if (flow_id >= FLEXNIC_PL_FLOWST_NUM) 
+  {
     fprintf(stderr, "fast_appctx_poll: invalid flow id=%u\n", flow_id);
     abort();
   }
@@ -106,7 +100,7 @@ int fast_appctx_poll_fetch(struct dataplane_context *ctx,
   return 0;
 }
 
-int inline fast_appctx_poll_bump(struct dataplane_context *ctx, void *pqe,
+int fast_appctx_poll_bump(struct dataplane_context *ctx, void *pqe,
     struct network_buf_handle *nbh, int *vmid, uint32_t ts)
 {
   int ret;
@@ -158,10 +152,13 @@ int fast_actx_rxq_alloc(struct dataplane_context *ctx,
   return ret;
 }
 
-int fast_actx_rxq_probe(struct flextcp_pl_appctx *actx, uint16_t vmid)
+int fast_actx_rxq_probe(struct dataplane_context *ctx, 
+    uint16_t vmid, uint32_t actxid)
 {
+  struct flextcp_pl_appctx *actx = &fp_state->appctx[ctx->id][vmid][actxid];
   struct flextcp_pl_arx *parx;
   uint32_t pos, i;
+  
   if (actx->rx_avail > actx->rx_len / 2) {
     return -1;
   }
@@ -171,12 +168,12 @@ int fast_actx_rxq_probe(struct flextcp_pl_appctx *actx, uint16_t vmid)
     pos -= actx->rx_len;
 
   i = 0;
-  while (actx->rx_avail < actx->rx_len && i < 2 * BATCH_SIZE) {
+  while (actx->rx_avail < actx->rx_len && i < 2 * BATCH_SIZE) 
+  {
     parx = dma_pointer(actx->rx_base + pos, sizeof(*parx), vmid);
 
-    if (parx->type != 0) {
+    if (parx->type != 0) 
       break;
-    }
 
     actx->rx_avail += sizeof(*parx);
     pos += sizeof(*parx);

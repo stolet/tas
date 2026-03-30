@@ -57,38 +57,17 @@ struct qman_thread {
   struct utils_rng rng;
 };
 
-struct polled_context {
-  uint32_t id;
-  uint32_t vmid;
-  uint32_t next;
-  uint32_t prev;
-  uint16_t flags;
-  uint16_t null_rounds;
-};
-
 struct polled_vm {
   uint32_t id;
   uint32_t next;
   uint32_t prev;
   uint16_t flags;
+  uint32_t nctx;
   uint32_t poll_next_ctx;
 
   /* polled contexts for each app */
   uint32_t act_ctx_head;
   uint32_t act_ctx_tail;
-  struct polled_context ctxs[FLEXNIC_PL_APPST_CTX_NUM];
-};
-
-struct dataplane_poll_ctx {
-  struct flextcp_pl_appctx *actx;
-  uint16_t vmid;
-  uint16_t ctxid;
-};
-
-struct dataplane_poll_vm {
-  uint16_t vmid;
-  uint16_t start;
-  uint16_t count;
 };
 
 struct vm_budget {
@@ -169,19 +148,9 @@ struct dataplane_context {
   uint16_t tx_num;
 
   /********************************************************/
-  /* polling queues */
-  /* polling rounds counter until we have to poll every queue */
-  uint16_t poll_rounds;
+  /* polling queues topology */
   uint32_t poll_next_vm;
-  uint32_t act_head;
-  uint32_t act_tail;
-  struct polled_vm polled_vms[FLEXNIC_PL_VMST_NUM];  
-  uint32_t reg_topo_gen;
-  uint16_t reg_vm_count;
-  uint16_t reg_ctx_count;
-  struct dataplane_poll_vm reg_vms[FLEXNIC_PL_VMST_NUM];
-  struct dataplane_poll_ctx
-      reg_ctxs[FLEXNIC_PL_VMST_NUM * FLEXNIC_PL_APPCTX_NUM];
+  struct polled_vm polled_vms[FLEXNIC_PL_VMST_NUM];
 
   /********************************************************/
   /* group resource budget */
