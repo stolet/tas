@@ -42,8 +42,7 @@ void fast_appctx_poll_pf(struct dataplane_context *ctx,
 }
 
 int fast_appctx_poll_fetch(struct dataplane_context *ctx,
-    uint32_t vmid, uint16_t actxid,
-    void **pqe, uint8_t spend_budget)
+    uint32_t vmid, uint16_t actxid, void **pqe)
 {
   struct flextcp_pl_appctx *actx = &fp_state->appctx[ctx->id][vmid][actxid];
   struct flextcp_pl_atx *atx;

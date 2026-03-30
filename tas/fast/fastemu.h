@@ -39,8 +39,7 @@ void fast_kernel_packet(struct dataplane_context *ctx,
 void fast_appctx_poll_pf(struct dataplane_context *ctx, 
     uint16_t vmid, uint32_t ctxid);
 int fast_appctx_poll_fetch(struct dataplane_context *ctx,
-    uint32_t vmid, uint16_t actxid,
-    void **pqe, uint8_t spend_budget);
+    uint32_t vmid, uint16_t actxid, void **pqe);
 int fast_appctx_poll_bump(struct dataplane_context *ctx, void *pqe,
     struct network_buf_handle *nbh, int *vmid, uint32_t ts);
 

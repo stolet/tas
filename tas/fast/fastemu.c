@@ -226,10 +226,7 @@ void dataplane_loop(struct dataplane_context *ctx)
 
     STATS_TS(start);
   
-    // s_cycs = util_rdtsc();
     n += poll_rx(ctx, ts, cyc);
-    // e_cycs = util_rdtsc();
-    // spend_budget(ctx, e_cycs - s_cycs);
 
     STATS_TS(rx);
     tx_flush(ctx);
@@ -565,7 +562,7 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
 
       for (i_b = 0; i_b < BATCH_SIZE && k < max; i_b++)
       {
-        ret = fast_appctx_poll_fetch(ctx, vmid, ctxid, &aqes[k], 1);
+        ret = fast_appctx_poll_fetch(ctx, vmid, ctxid, &aqes[k]);
         
         if (ret == 0)
           k++;
@@ -609,7 +606,7 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
         
       for (i_b = 0; i_b < BATCH_SIZE && k < max; i_b++)
       {
-        ret = fast_appctx_poll_fetch(ctx, vmid, ctxid, &aqes[k], 0);
+        ret = fast_appctx_poll_fetch(ctx, vmid, ctxid, &aqes[k]);
         if (ret == 0)
           k++;
         else
