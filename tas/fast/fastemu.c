@@ -508,6 +508,7 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
   int ret;
   struct network_buf_handle **handles;
   void *aqes[BATCH_SIZE];
+  uint16_t vmids[BATCH_SIZE];
   uint64_t cycles[FLEXNIC_PL_VMST_NUM] = {0};
   unsigned total;
   uint16_t max, k, i, num_bufs = 0;
@@ -573,9 +574,14 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
         ret = fast_appctx_poll_fetch(ctx, vmid, ctxid, &aqes[k], 1);
         
         if (ret == 0)
+        {
+          vmids[k] = vmid;          
           k++;
+        }
         else
+        {
           break;
+        }
         
         total++;
       }
@@ -613,11 +619,16 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
         
       for (i_b = 0; i_b < BATCH_SIZE && k < max; i_b++)
       {
-        ret = fast_appctx_poll_fetch(ctx, ctxid, vmid, &aqes[k], 0);
+        ret = fast_appctx_poll_fetch(ctx, vmid, ctxid, &aqes[k], 0);
         if (ret == 0)
+        {
+          vmids[k] = vmid;          
           k++;
+        }
         else
+        {
           break;
+        }
         
         total++;
       }
@@ -628,6 +639,7 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
   for (i = 0; i < k; i++)
   {
     start = util_rdtsc();
+    vmid = vmids[i];
     ret = fast_appctx_poll_bump(ctx, aqes[i], handles[num_bufs], &vmid, ts);
     if (ret == 0)
       num_bufs++;
