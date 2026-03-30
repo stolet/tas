@@ -60,14 +60,11 @@ void budget_init(int threads_launched)
 
 void budget_update(uint64_t cur_tsc)
 {
-  int vmid, ctxid;
-  uint16_t vm_count, vm_idx;
-  int64_t incr, weighted_incr;
+  uint32_t vmid, ctxid;
+  uint16_t vm_count;
+  int64_t incr;
   int64_t total_budget;
-  double delta_weight;
-  double deltas_sum;
   double weights_sum = 0;
-  double deltas[budget_threads_launched];
 #ifdef BUDGET_DEBUG_STATS
   uint64_t now_us;
   struct budget_debug_fast_snapshot debug_snapshot;
@@ -76,14 +73,14 @@ void budget_update(uint64_t cur_tsc)
   uint64_t applied_distribution;
 #endif
 
-  if (cur_tsc - budget_ts < budget_period_tsc) {
+  if (cur_tsc - budget_ts < budget_period_tsc) 
     return;
-  }
+  
   budget_ts = cur_tsc;
-
   total_budget = config.bu_boost * (cur_tsc - last_bu_update_ts);
   vm_count = tas_reg_nvm_get();
-#ifdef BUDGET_DEBUG_STATS
+
+  #ifdef BUDGET_DEBUG_STATS
   now_us = util_timeout_time_us();
 #endif
 
@@ -109,36 +106,23 @@ void budget_update(uint64_t cur_tsc)
   }
 #endif
 
-  for (vm_idx = 0; vm_idx < vm_count; vm_idx++) {
-    vmid = tas_reg_vm_ids[vm_idx];
+  for (vmid = 0; vmid < vm_count; vmid++) {
     weights_sum += vm_weights[vmid];
   }
 
-  for (vm_idx = 0; vm_idx < vm_count; vm_idx++) {
-    vmid = tas_reg_vm_ids[vm_idx];
-    incr = ((total_budget * vm_weights[vmid]) / weights_sum) *
-        budget_threads_launched;
+  for (vmid = 0; vmid < vm_count; vmid++) 
+  {
+    incr = ((total_budget * vm_weights[vmid]) / weights_sum);
+    assert(incr >= 0);
 
-    deltas_sum = 0;
-    for (ctxid = 0; ctxid < budget_threads_launched; ctxid++) {
-      deltas[ctxid] = get_budget_delta(vmid, ctxid);
-      deltas_sum += deltas[ctxid];
-    }
-
-    for (ctxid = 0; ctxid < budget_threads_launched; ctxid++) {
-      if (deltas_sum == 0) {
-        delta_weight = 1.0 / budget_threads_launched;
-      } else {
-        delta_weight = deltas[ctxid] / deltas_sum;
-      }
-
-      weighted_incr = incr * delta_weight;
-      assert(weighted_incr >= 0);
-      assert(delta_weight >= 0 && delta_weight <= 1);
+    for (ctxid = 0; ctxid < budget_threads_launched; ctxid++) 
+    {
 #ifdef BUDGET_DEBUG_STATS
       budget_before = tas_get_budget_raw(vmid, ctxid);
 #endif
-      boost_budget(vmid, ctxid, weighted_incr);
+
+      boost_budget(vmid, ctxid, incr);
+
 #ifdef BUDGET_DEBUG_STATS
       budget_after = tas_get_budget_raw(vmid, ctxid);
       if (budget_after > budget_before) {

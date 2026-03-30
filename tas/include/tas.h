@@ -43,10 +43,7 @@ extern int *vm_shm_fd;
 extern struct flextcp_pl_mem *fp_state;
 extern struct flexnic_info *tas_info;
 extern _Atomic uint16_t tas_reg_nvm;
-extern uint16_t tas_reg_vm_ids[FLEXNIC_PL_VMST_NUM];
 extern _Atomic uint16_t tas_reg_nctx[FLEXNIC_PL_VMST_NUM];
-extern uint16_t tas_reg_ctx_ids[FLEXNIC_PL_VMST_NUM]
-    [FLEXNIC_PL_APPCTX_NUM];
 extern _Atomic uint32_t tas_reg_topo_gen;
 extern _Atomic uint16_t tas_reg_app_count;
 #if RTE_VER_YEAR < 19

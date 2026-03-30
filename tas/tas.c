@@ -57,9 +57,7 @@ unsigned fp_cores_max;
 volatile unsigned fp_cores_cur = 1;
 volatile unsigned fp_scale_to = 0;
 _Atomic uint16_t tas_reg_nvm = 0;
-uint16_t tas_reg_vm_ids[FLEXNIC_PL_VMST_NUM];
 _Atomic uint16_t tas_reg_nctx[FLEXNIC_PL_VMST_NUM];
-uint16_t tas_reg_ctx_ids[FLEXNIC_PL_VMST_NUM][FLEXNIC_PL_APPCTX_NUM];
 _Atomic uint32_t tas_reg_topo_gen = 1;
 _Atomic uint16_t tas_reg_app_count = 0;
 
@@ -69,9 +67,6 @@ int exited;
 struct budget_statistics budget_statistics;
 struct dataplane_context **ctxs = NULL;
 struct core_load *core_loads = NULL;
-static uint8_t tas_registered_vm_slots[FLEXNIC_PL_VMST_NUM];
-static uint8_t tas_registered_ctx_slots[FLEXNIC_PL_VMST_NUM]
-    [FLEXNIC_PL_APPCTX_NUM];
 
 static int start_threads(void);
 static void thread_error(void);
@@ -86,18 +81,12 @@ void tas_register_vm(uint16_t vmid)
     abort();
   }
 
-  if (tas_registered_vm_slots[vmid] != 0) {
-    return;
-  }
-
   idx = atomic_load_explicit(&tas_reg_nvm, memory_order_relaxed);
   if (idx >= FLEXNIC_PL_VMST_NUM) {
     fprintf(stderr, "tas_register_vm: vm registration overflow (%u)\n", idx);
     abort();
   }
 
-  tas_registered_vm_slots[vmid] = 1;
-  tas_reg_vm_ids[idx] = vmid;
   atomic_store_explicit(&tas_reg_nvm, idx + 1,
       memory_order_release);
   atomic_fetch_add_explicit(&tas_reg_topo_gen, 1,
@@ -118,10 +107,6 @@ void tas_register_appctx(uint16_t vmid, uint16_t ctxid)
     abort();
   }
 
-  if (tas_registered_ctx_slots[vmid][ctxid] != 0) {
-    return;
-  }
-
   idx = atomic_load_explicit(&tas_reg_nctx[vmid],
       memory_order_relaxed);
   if (idx >= FLEXNIC_PL_APPCTX_NUM) {
@@ -131,8 +116,6 @@ void tas_register_appctx(uint16_t vmid, uint16_t ctxid)
     abort();
   }
 
-  tas_registered_ctx_slots[vmid][ctxid] = 1;
-  tas_reg_ctx_ids[vmid][idx] = ctxid;
   atomic_store_explicit(&tas_reg_nctx[vmid], idx + 1,
       memory_order_release);
   atomic_fetch_add_explicit(&tas_reg_topo_gen, 1,
@@ -367,13 +350,11 @@ struct budget_statistics get_budget_stats(int vmid, int ctxid)
 }
 
 void print_budget() {
-  uint16_t vm_count, vm_idx;
-  int vmid;
+  uint16_t vm_count, vmid;
 
   vm_count = tas_reg_nvm_get();
-  for (vm_idx = 0; vm_idx < vm_count; vm_idx++)
+  for (vmid = 0; vmid < vm_count; vmid++)
   {
-    vmid = tas_reg_vm_ids[vm_idx];
     for (int ctxid = 0; ctxid < threads_launched; ctxid++)
     {
       fprintf(stderr, "vmid=%d ctxid=%d budget=%ld\n",

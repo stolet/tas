@@ -79,17 +79,14 @@ int cc_init(void)
 
 uint32_t cc_next_ts(uint32_t cur_ts)
 {
-  int i, vmid;
+  int i;
   uint16_t vm_count;
   assert(cur_ts >= last_ts);
   uint32_t ts = -1U;
 
   vm_count = tas_reg_nvm_get();
   for (i = 0; i < vm_count; i++)
-  {
-    vmid = tas_reg_vm_ids[i];
-    cc_next_ts_vm(cur_ts, vmid, &ts);
-  }
+    cc_next_ts_vm(cur_ts, i, &ts);
 
   return (ts == -1U ? -1U : TAS_MAX(ts, config.cc_control_granularity - (cur_ts - last_ts)));
 }
@@ -135,7 +132,7 @@ unsigned cc_poll(uint32_t cur_ts)
 
   for(i = 0; i < vm_count && n < 128; i++)
   {
-    vmid = tas_reg_vm_ids[(next_vm + i) % vm_count];
+    vmid = (next_vm + i) % vm_count;
     n = cc_poll_vm(vmid, n, cur_ts, diff_ts);
   }
 
