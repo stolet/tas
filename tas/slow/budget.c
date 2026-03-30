@@ -71,6 +71,7 @@ void budget_update(uint64_t cur_tsc)
   int64_t budget_before;
   int64_t budget_after;
   uint64_t applied_distribution;
+  uint16_t vm_ids[FLEXNIC_PL_VMST_NUM];
 #endif
 
   if (cur_tsc - budget_ts < budget_period_tsc) 
@@ -80,8 +81,11 @@ void budget_update(uint64_t cur_tsc)
   total_budget = config.bu_boost * (cur_tsc - last_bu_update_ts);
   vm_count = tas_reg_nvm_get();
 
-  #ifdef BUDGET_DEBUG_STATS
+#ifdef BUDGET_DEBUG_STATS
   now_us = util_timeout_time_us();
+  for (vmid = 0; vmid < vm_count; vmid++) {
+    vm_ids[vmid] = (uint16_t) vmid;
+  }
 #endif
 
   if (vm_count == 0) {
@@ -89,7 +93,7 @@ void budget_update(uint64_t cur_tsc)
     budget_debug_window_clear_core_distributions(&budget_debug_window,
         budget_threads_launched);
     budget_debug_window_maybe_print(&budget_debug_window, stderr, now_us,
-        budget_threads_launched, tas_reg_vm_ids, vm_count);
+        budget_threads_launched, vm_ids, vm_count);
 #endif
     last_bu_update_ts = cur_tsc;
     return;
@@ -101,7 +105,7 @@ void budget_update(uint64_t cur_tsc)
   for (ctxid = 0; ctxid < budget_threads_launched; ctxid++) {
     tas_budget_debug_snapshot_core(ctxid, &debug_snapshot);
     budget_debug_record_core_interval(&budget_debug_window, ctxid,
-        &debug_snapshot, tas_reg_vm_ids, vm_count,
+        &debug_snapshot, vm_ids, vm_count,
         config.bu_max_budget, cur_tsc - last_bu_update_ts);
   }
 #endif
@@ -143,7 +147,7 @@ void budget_update(uint64_t cur_tsc)
   }
 
   budget_debug_window_maybe_print(&budget_debug_window, stderr, now_us,
-      budget_threads_launched, tas_reg_vm_ids, vm_count);
+      budget_threads_launched, vm_ids, vm_count);
 #endif
 
   last_bu_update_ts = cur_tsc;

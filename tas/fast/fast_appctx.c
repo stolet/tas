@@ -89,14 +89,6 @@ int fast_appctx_poll_fetch(struct dataplane_context *ctx,
     tx_head -= actx->tx_len;
   actx->tx_head = tx_head;
 
-#ifdef BUDGET_DEBUG_STATS
-  if (!spend_budget) 
-  {
-    ctx->budget_debug_work_conserving_vm[vm_id] += atx->msg.connupdate.tx_bump;
-    ctx->budget_debug_work_conserving_total += atx->msg.connupdate.tx_bump;
-  }
-#endif
-
   return 0;
 }
 

@@ -180,8 +180,6 @@ struct dataplane_context {
 #ifdef BUDGET_DEBUG_STATS
   volatile uint64_t budget_debug_consumed_total;
   volatile uint64_t budget_debug_consumed_vm[FLEXNIC_PL_VMST_NUM];
-  int budget_debug_work_conserving_total;
-  int budget_debug_work_conserving_vm[FLEXNIC_PL_VMST_NUM];
   volatile uint64_t budget_debug_wc_cycles[FLEXNIC_PL_VMST_NUM];
 #endif
 #ifdef DATAPLANE_STATS

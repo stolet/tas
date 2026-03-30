@@ -470,7 +470,7 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
     cycles[i] += end - start;
   }
   
-  #ifdef BUDGET_DEBUG_STATS
+#ifdef BUDGET_DEBUG_STATS
     for (i = 0; i < n; i++)
     {
       if (fss[i] != NULL && drop[i] && !has_funded)
@@ -480,7 +480,7 @@ static unsigned poll_rx(struct dataplane_context *ctx, uint32_t ts,
             cycles[i]);
       }
     }
-  #endif
+#endif
   
   if (!has_funded)
     return n;
@@ -651,7 +651,12 @@ static unsigned poll_queues(struct dataplane_context *ctx, uint32_t ts)
 
     end = util_rdtsc();
     cycles[i_v] += end - start;
-    budget_consume(ctx, i_v, cycles[i_v]);
+    if (temp_k != 0)
+      budget_consume(ctx, i_v, cycles[i_v]);
+#ifdef BUDGET_DEBUG_STATS
+    else
+      budget_debug_record_wc(ctx, i_v, cycles[i_v]);
+#endif
   }
 
 out:
@@ -669,7 +674,7 @@ static unsigned poll_kernel(struct dataplane_context *ctx, uint32_t ts)
   struct network_buf_handle **handles;
   uint64_t start, end;
   uint16_t max, k = 0, vmid;
-  int i, ret, vm_count, broke_n, broke_i, total = 0;
+  int i, ret, vm_count, total = 0;
 
   max = BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_num < max)
@@ -695,7 +700,6 @@ static unsigned poll_kernel(struct dataplane_context *ctx, uint32_t ts)
     vmid = (ctx->poll_next_kernel_vm + i) % vm_count;
     if (!budget_available(ctx, vmid))
     {
-      broke_n++;
       continue;
     }
     
