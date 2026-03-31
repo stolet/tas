@@ -111,9 +111,15 @@ struct budget_debug_window {
   uint64_t cur_core_distributed[FLEXNIC_PL_APPST_CTX_MCS];
   uint64_t prev_vm_distributed[FLEXNIC_PL_APPST_CTX_MCS][FLEXNIC_PL_VMST_NUM];
   uint64_t cur_vm_distributed[FLEXNIC_PL_APPST_CTX_MCS][FLEXNIC_PL_VMST_NUM];
+  uint64_t prev_slow_distributed;
+  uint64_t cur_slow_distributed;
+  uint64_t prev_slow_vm_distributed[FLEXNIC_PL_VMST_NUM];
+  uint64_t cur_slow_vm_distributed[FLEXNIC_PL_VMST_NUM];
   struct budget_debug_core_window cores[FLEXNIC_PL_APPST_CTX_MCS];
+  struct budget_debug_core_window slow;
   struct budget_debug_vm_window
       vms[FLEXNIC_PL_APPST_CTX_MCS][FLEXNIC_PL_VMST_NUM];
+  struct budget_debug_vm_window slow_vms[FLEXNIC_PL_VMST_NUM];
 };
 
 void budget_debug_window_begin(struct budget_debug_window *window,
@@ -124,12 +130,19 @@ void budget_debug_record_core_interval(struct budget_debug_window *window,
     uint16_t core_id, const struct budget_debug_fast_snapshot *snapshot,
     const uint16_t *vm_ids, uint16_t vm_count, uint64_t max_budget,
     uint64_t elapsed_cycles);
+void budget_debug_record_slow_interval(struct budget_debug_window *window,
+    const struct budget_debug_fast_snapshot *snapshot, const uint16_t *vm_ids,
+    uint16_t vm_count, uint64_t max_budget, uint64_t elapsed_cycles);
 void budget_debug_record_vm_distribution(struct budget_debug_window *window,
     uint16_t core_id, uint16_t vm_id, int64_t budget_before,
     int64_t budget_after, uint64_t applied_distribution,
     uint64_t max_budget);
+void budget_debug_record_slow_distribution(struct budget_debug_window *window,
+    uint16_t vm_id, int64_t budget_before, int64_t budget_after,
+    uint64_t applied_distribution, uint64_t max_budget);
 void budget_debug_publish_core_distribution(struct budget_debug_window *window,
     uint16_t core_id);
+void budget_debug_publish_slow_distribution(struct budget_debug_window *window);
 void budget_debug_window_maybe_print(struct budget_debug_window *window,
     FILE *out, uint64_t now_us, uint16_t num_cores, const uint16_t *vm_ids,
     uint16_t vm_count);

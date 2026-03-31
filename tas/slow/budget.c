@@ -45,6 +45,8 @@ void boost_budget(int vmid, int ctxid, int64_t incr);
 int64_t tas_get_budget_raw(int vmid, int ctxid);
 void tas_budget_debug_snapshot_core(int ctxid,
     struct budget_debug_fast_snapshot *snapshot);
+static void tas_budget_debug_snapshot_slow(
+    struct budget_debug_fast_snapshot *snapshot);
 static struct budget_debug_window budget_debug_window;
 #endif
 
@@ -134,6 +136,7 @@ static void budget_update(uint64_t cur_tsc)
 #ifdef BUDGET_DEBUG_STATS
     budget_debug_window_clear_core_distributions(&budget_debug_window,
         budget_threads_launched);
+    budget_debug_publish_slow_distribution(&budget_debug_window);
     budget_debug_window_maybe_print(&budget_debug_window, stderr, now_us,
         budget_threads_launched, vm_ids, vm_count);
 #endif
@@ -150,6 +153,9 @@ static void budget_update(uint64_t cur_tsc)
         &debug_snapshot, vm_ids, vm_count,
         config.bu_max_budget, cur_tsc - last_bu_update_ts);
   }
+  tas_budget_debug_snapshot_slow(&debug_snapshot);
+  budget_debug_record_slow_interval(&budget_debug_window, &debug_snapshot,
+      vm_ids, vm_count, config.bu_max_budget, cur_tsc - last_bu_update_ts);
 #endif
 
   for (vmid = 0; vmid < vm_count; vmid++) {
@@ -182,13 +188,28 @@ static void budget_update(uint64_t cur_tsc)
 #endif
     }
 
+#ifdef BUDGET_DEBUG_STATS
+    budget_before = slow_budgets[vmid].budget;
+#endif
     slow_budget_boost(vmid, incr);
+#ifdef BUDGET_DEBUG_STATS
+    budget_after = slow_budgets[vmid].budget;
+    if (budget_after > budget_before) {
+      applied_distribution = (uint64_t) (budget_after - budget_before);
+    } else {
+      applied_distribution = 0;
+    }
+    budget_debug_record_slow_distribution(&budget_debug_window, vmid,
+        budget_before, budget_after, applied_distribution,
+        config.bu_max_budget);
+#endif
   }
 
 #ifdef BUDGET_DEBUG_STATS
   for (ctxid = 0; ctxid < budget_threads_launched; ctxid++) {
     budget_debug_publish_core_distribution(&budget_debug_window, ctxid);
   }
+  budget_debug_publish_slow_distribution(&budget_debug_window);
 
   budget_debug_window_maybe_print(&budget_debug_window, stderr, now_us,
       budget_threads_launched, vm_ids, vm_count);
@@ -236,17 +257,33 @@ void slow_budget_consume(uint16_t vmid, enum slow_budget_phase phase,
 
   switch (phase) {
     case SLOW_BUDGET_PHASE_POLL:
-      stats->cycles_poll += amount;
+      __atomic_fetch_add(&stats->cycles_poll, amount, __ATOMIC_RELAXED);
       break;
 
     case SLOW_BUDGET_PHASE_TX:
-      stats->cycles_tx += amount;
+      __atomic_fetch_add(&stats->cycles_tx, amount, __ATOMIC_RELAXED);
       break;
 
     case SLOW_BUDGET_PHASE_RX:
-      stats->cycles_rx += amount;
+      __atomic_fetch_add(&stats->cycles_rx, amount, __ATOMIC_RELAXED);
       break;
   }
 
-  stats->cycles_total += amount;
+  __atomic_fetch_add(&stats->cycles_total, amount, __ATOMIC_RELAXED);
 }
+
+#ifdef BUDGET_DEBUG_STATS
+static void tas_budget_debug_snapshot_slow(
+    struct budget_debug_fast_snapshot *snapshot)
+{
+  int vmid;
+
+  snapshot->consumed_total = 0;
+  for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++) {
+    snapshot->consumed_vm[vmid] = __atomic_exchange_n(
+        &slow_budgets[vmid].cycles_total, 0, __ATOMIC_RELAXED);
+    snapshot->work_conserving_vm[vmid] = 0;
+    snapshot->consumed_total += snapshot->consumed_vm[vmid];
+  }
+}
+#endif
