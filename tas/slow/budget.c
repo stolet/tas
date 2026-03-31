@@ -202,7 +202,7 @@ static void init_vm_weights(double *weights)
   int vmid;
 
   for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++) {
-    weights[vmid] = 1;
+    weights[vmid] = config.bu_vm_weights[vmid];
   }
 }
 

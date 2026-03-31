@@ -83,6 +83,7 @@ enum cfg_params {
   CP_BU_MAX_BUDGET,
   CP_BU_BUDGET_BOOST,
   CP_BU_DEDICATED,
+  CP_BU_VM_WEIGHT,
   CP_BU_USE_RATIO,
   CP_BU_ECN_THRESH,
   CP_BU_UPDATE_FREQ,
@@ -243,6 +244,9 @@ static struct option opts[] = {
     { .name = "bu-dedicated",
       .has_arg = no_argument,
       .val = CP_BU_DEDICATED },
+    { .name = "bu-vm-weight",
+      .has_arg = required_argument,
+      .val = CP_BU_VM_WEIGHT },
     { .name = "kni-name",
       .has_arg = required_argument,
       .val = CP_KNI_NAME },
@@ -266,6 +270,7 @@ static inline int parse_int8(const char *s, uint8_t *pu8);
 static inline int parse_double(const char *s, double *pd);
 static inline int parse_cidr(char *s, uint32_t *ip, uint8_t *prefix);
 static inline int parse_route(char *s, struct configuration *c);
+static inline int parse_vm_weight(const char *s, struct configuration *c);
 static inline int parse_arg_append(char *s, struct configuration *c);
 
 int config_parse(struct configuration *c, int argc, char *argv[])
@@ -576,6 +581,12 @@ int config_parse(struct configuration *c, int argc, char *argv[])
       case CP_BU_DEDICATED:
         c->bu_dedicated = 1;
         break;
+      case CP_BU_VM_WEIGHT:
+        if (parse_vm_weight(optarg, c) != 0) {
+          fprintf(stderr, "vm budget weight parsing failed\n");
+          goto failed;
+        }
+        break;
       case CP_KNI_NAME:
         if (!(c->kni_name = strdup(optarg))) {
           fprintf(stderr, "strdup kni name failed\n");
@@ -627,6 +638,8 @@ failed:
 
 static int config_defaults(struct configuration *c, char *progname)
 {
+  int vmid;
+
   c->ip = 0;
   c->vm_shm_len = 1 * 1024 * 1024 * 1024;
   /* Set the data mem off to the end of the channel used by the proxy */
@@ -674,6 +687,9 @@ static int config_defaults(struct configuration *c, char *progname)
   c->bu_max_budget = 210000;
   c->bu_update_freq = 100;
   c->bu_dedicated = 0;
+  for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++) {
+    c->bu_vm_weights[vmid] = 1.0;
+  }
   c->bu_use_ratio = 0.9;
   c->bu_ecn_thresh = 0.1;
   c->bu_boost = 0.94;
@@ -802,6 +818,8 @@ static void print_usage(struct configuration *c, char *progname)
           "[default: %lf]\n"
       "  --bu-dedicated              Run budget updates on a dedicated core "
           "[default: disabled]\n"
+      "  --bu-vm-weight=VMID:WEIGHT  Assign budget weight to VM slot "
+          "[default: 1.0]\n"
       "\n"
       "Host kernel interface:\n"
       "  --kni-name=NAME             Network interface name to expose "
@@ -863,6 +881,26 @@ static inline int parse_double(const char *s, double *pd)
   *pd = strtod(s, &end);
   if (!*s || *end)
     return -1;
+  return 0;
+}
+
+static inline int parse_vm_weight(const char *s, struct configuration *c)
+{
+  char *end;
+  unsigned long vmid;
+  double weight;
+
+  vmid = strtoul(s, &end, 10);
+  if (!*s || *end != ':' || vmid >= FLEXNIC_PL_VMST_NUM) {
+    return -1;
+  }
+
+  weight = strtod(end + 1, &end);
+  if (*end != '\0' || weight <= 0) {
+    return -1;
+  }
+
+  c->bu_vm_weights[vmid] = weight;
   return 0;
 }
 

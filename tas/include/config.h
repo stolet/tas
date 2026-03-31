@@ -27,6 +27,8 @@
 
 #include <stdint.h>
 
+#include <tas_memif.h>
+
 
 /** Supported congestion control algorithms. */
 enum config_cc_algorithm {
@@ -144,6 +146,8 @@ struct configuration {
   double bu_boost;
   /** Run budget updates on a dedicated DPDK core */
   uint32_t bu_dedicated;
+  /** Budget weight for each VM slot */
+  double bu_vm_weights[FLEXNIC_PL_VMST_NUM];
   /** VM budget used before rellocating to other VMs */
   double bu_use_ratio;
   /** Relative budget threshold below which transmitted packets set TCP ECE; 0 disables */
