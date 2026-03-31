@@ -150,7 +150,7 @@ unsigned nicif_poll(void)
   unsigned i, ret = 0; /*, nonsuc = 0*/
   int x;
 
-  for (i = 0; i < 512; i++)
+  for (i = 0; i < 8; i++)
   {
     if (UNLIKELY((i & (BUDGET_INNER_UPDATE_STRIDE - 1)) ==
         (BUDGET_INNER_UPDATE_STRIDE - 1))) {
@@ -919,16 +919,18 @@ static int adminq_init_ovs()
 
 static inline int rxq_poll(void)
 {
-  uint32_t old_tail, tail, qidx;
+  uint32_t old_tail, next_tail, tail, qidx;
   volatile struct flextcp_pl_krx *krx;
   struct nic_buffer *buf;
+  uint16_t vmid;
   uint8_t type;
   int ret = 0;
+  uint64_t start, end;
 
   qidx = rxq_next;
   old_tail = tail = rxq_tail[qidx];
+  vmid = qidx % FLEXNIC_PL_KCTX_NUM;
   krx = &rxq_base[qidx][tail];
-  buf = &rxq_bufs[qidx][tail];
   rxq_next = (qidx + 1) % (fn_cores * FLEXNIC_PL_KCTX_NUM);
 
   /* no queue entry here */
@@ -938,36 +940,51 @@ static inline int rxq_poll(void)
     return -1;
   }
 
-  /* update tail */
-  tail = tail + 1;
-  if (tail == rxq_len)
+  if (vmid < FLEXNIC_PL_VMST_NUM && !slow_budget_available(vmid))
+    return -1;
+
+  start = util_rdtsc();
+  while (type != FLEXTCP_PL_KRX_INVALID)
   {
-    tail -= rxq_len;
+    krx = &rxq_base[qidx][tail];
+    buf = &rxq_bufs[qidx][tail];
+    old_tail = tail;
+    type = krx->type;
+    if (type == FLEXTCP_PL_KRX_INVALID)
+      break;
+
+    next_tail = tail + 1;
+    if (next_tail == rxq_len)
+      next_tail -= rxq_len;
+
+    switch (type)
+    {
+    case FLEXTCP_PL_KRX_PACKET:
+      #if VIRTUOSO_GRE
+        process_packet_gre(buf->buf, krx);
+      #else
+        process_packet(buf->buf, krx->msg.packet.len, krx->msg.packet.fn_core,
+            krx->msg.packet.flow_group);
+      #endif
+      break;
+
+    default:
+      fprintf(stderr, "rxq_poll: unknown rx type 0x%x old %x len %x\n", type,
+          old_tail, rxq_len);
+    }
+
+    krx->type = 0;
+    tail = next_tail;
+    ret++;
   }
 
-  /* handle based on queue entry type */
-  type = krx->type;
-
-  switch (type)
-  {
-  case FLEXTCP_PL_KRX_PACKET:
-    #if VIRTUOSO_GRE
-      process_packet_gre(buf->buf, krx);
-    #else
-      process_packet(buf->buf, krx->msg.packet.len, krx->msg.packet.fn_core,
-                    krx->msg.packet.flow_group);
-    #endif
-    break;
-
-  default:
-    fprintf(stderr, "rxq_poll: unknown rx type 0x%x old %x len %x\n", type,
-            old_tail, rxq_len);
-  }
-
-  krx->type = 0;
   rxq_tail[qidx] = tail;
+  end = util_rdtsc();
 
-  return ret;
+  if (vmid < FLEXNIC_PL_VMST_NUM)
+    slow_budget_consume(vmid, SLOW_BUDGET_PHASE_RX, end - start);
+
+  return 0;
 }
 
 static inline int ovsrxq_poll(void)

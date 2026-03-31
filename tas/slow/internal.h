@@ -51,6 +51,16 @@ extern int kernel_notifyfd;
 void budget_init(int threads_launched);
 void budget_update(uint64_t cur_tsc);
 
+enum slow_budget_phase {
+  SLOW_BUDGET_PHASE_POLL,
+  SLOW_BUDGET_PHASE_TX,
+  SLOW_BUDGET_PHASE_RX,
+};
+
+int slow_budget_available(uint16_t vmid);
+void slow_budget_consume(uint16_t vmid, enum slow_budget_phase phase,
+    uint64_t amount);
+
 struct nicif_completion {
   struct nbqueue_el el;
   struct nbqueue *q;

@@ -147,11 +147,32 @@ int tcp_init(void)
 void tcp_poll(void)
 {
   struct connection *conn;
+  struct connection *first_skipped = NULL;
   uint8_t *p;
+  uint16_t vmid;
   int ret;
+  unsigned n = 0;
+  uint64_t start, end;
 
   while ((p = nbqueue_deq(&conn_async_q)) != NULL) {
+    if (UNLIKELY((n & (BUDGET_INNER_UPDATE_STRIDE - 1)) ==
+        (BUDGET_INNER_UPDATE_STRIDE - 1))) {
+      budget_update(util_rdtsc());
+    }
+
     conn = (struct connection *) (p - offsetof(struct connection, comp.el));
+    vmid = conn->ctx->app->vm_id;
+    if (!slow_budget_available(vmid)) {
+      nbqueue_enq(&conn_async_q, &conn->comp.el);
+      if (first_skipped == conn)
+        break;
+      if (first_skipped == NULL)
+        first_skipped = conn;
+      n++;
+      continue;
+    }
+
+    start = util_rdtsc();
     if (conn->status == CONN_OVS_COMP) {
       if ((ret = tcp_open_resolve_routing(conn)) < 0) {
         conn_free(conn);
@@ -169,6 +190,10 @@ void tcp_poll(void)
     } else {
       fprintf(stderr, "tcp_poll: unexpected conn state %u\n", conn->status);
     }
+
+    end = util_rdtsc();
+    slow_budget_consume(vmid, SLOW_BUDGET_PHASE_POLL, end - start);
+    n++;
   }
 }
 

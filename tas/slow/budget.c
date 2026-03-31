@@ -33,6 +33,7 @@
 #include "internal.h"
 
 static void init_vm_weights(double *weights);
+static void slow_budget_boost(int vmid, int64_t incr);
 
 uint64_t get_budget_delta(int vmid, int ctxid);
 void boost_budget(int vmid, int ctxid, int64_t incr);
@@ -48,14 +49,25 @@ static uint64_t last_bu_update_ts = 0;
 static uint64_t budget_ts = 0;
 static uint64_t budget_period_tsc = 0;
 static int budget_threads_launched = 0;
+static struct budget_statistics slow_budgets[FLEXNIC_PL_VMST_NUM];
 
 void budget_init(int threads_launched)
 {
+  int vmid;
+
   budget_threads_launched = threads_launched;
   budget_period_tsc = config.bu_update_freq * util_timeout_tsc_per_us();
   budget_ts = 0;
   last_bu_update_ts = 0;
   init_vm_weights(vm_weights);
+
+  for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++) {
+    slow_budgets[vmid].budget = config.bu_max_budget;
+    slow_budgets[vmid].cycles_poll = 0;
+    slow_budgets[vmid].cycles_tx = 0;
+    slow_budgets[vmid].cycles_rx = 0;
+    slow_budgets[vmid].cycles_total = 0;
+  }
 }
 
 void budget_update(uint64_t cur_tsc)
@@ -139,6 +151,8 @@ void budget_update(uint64_t cur_tsc)
           config.bu_max_budget);
 #endif
     }
+
+    slow_budget_boost(vmid, incr);
   }
 
 #ifdef BUDGET_DEBUG_STATS
@@ -160,4 +174,49 @@ static void init_vm_weights(double *weights)
   for (vmid = 0; vmid < FLEXNIC_PL_VMST_NUM; vmid++) {
     weights[vmid] = 1;
   }
+}
+
+static void slow_budget_boost(int vmid, int64_t incr)
+{
+  int64_t new_budget;
+
+  new_budget = slow_budgets[vmid].budget + incr;
+  if (new_budget > (int64_t) config.bu_max_budget) {
+    slow_budgets[vmid].budget = config.bu_max_budget;
+  } else {
+    slow_budgets[vmid].budget = new_budget;
+  }
+}
+
+int slow_budget_available(uint16_t vmid)
+{
+  return slow_budgets[vmid].budget > 0;
+}
+
+void slow_budget_consume(uint16_t vmid, enum slow_budget_phase phase,
+    uint64_t amount)
+{
+  struct budget_statistics *stats;
+
+  if (amount == 0)
+    return;
+
+  stats = &slow_budgets[vmid];
+  stats->budget -= (int64_t) amount;
+
+  switch (phase) {
+    case SLOW_BUDGET_PHASE_POLL:
+      stats->cycles_poll += amount;
+      break;
+
+    case SLOW_BUDGET_PHASE_TX:
+      stats->cycles_tx += amount;
+      break;
+
+    case SLOW_BUDGET_PHASE_RX:
+      stats->cycles_rx += amount;
+      break;
+  }
+
+  stats->cycles_total += amount;
 }

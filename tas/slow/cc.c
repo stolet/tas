@@ -114,26 +114,33 @@ unsigned cc_poll(uint32_t cur_ts)
   uint16_t vm_count;
   unsigned n = 0;
   uint32_t diff_ts;
+  uint64_t start, end;
 
   diff_ts = cur_ts - last_ts;
   if (0 && diff_ts < config.cc_control_granularity)
     return 0;
 
   vm_count = tas_reg_nvm_get();
-  if (vm_count == 0) {
+  if (vm_count == 0)
+  {
     last_ts = cur_ts;
     next_vm = 0;
     return 0;
   }
 
-  if (next_vm >= vm_count) {
+  if (next_vm >= vm_count)
     next_vm = 0;
-  }
 
-  for(i = 0; i < vm_count && n < 128; i++)
+  for(i = 0; i < vm_count && n < 8; i++)
   {
     vmid = (next_vm + i) % vm_count;
+    if (cc_conns[vmid] == NULL || !slow_budget_available(vmid))
+      continue;
+
+    start = util_rdtsc();
     n = cc_poll_vm(vmid, n, cur_ts, diff_ts);
+    end = util_rdtsc();
+    slow_budget_consume(vmid, SLOW_BUDGET_PHASE_TX, end - start);
   }
 
   last_ts = cur_ts;
