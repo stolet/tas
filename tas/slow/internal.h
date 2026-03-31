@@ -49,7 +49,8 @@ extern uint32_t cur_ts;
 extern int kernel_notifyfd;
 
 void budget_init(int threads_launched);
-void budget_update(uint64_t cur_tsc);
+void budget_poll(void);
+int budget_thread(void *arg);
 
 enum slow_budget_phase {
   SLOW_BUDGET_PHASE_POLL,

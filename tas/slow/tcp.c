@@ -157,7 +157,7 @@ void tcp_poll(void)
   while ((p = nbqueue_deq(&conn_async_q)) != NULL) {
     if (UNLIKELY((n & (BUDGET_INNER_UPDATE_STRIDE - 1)) ==
         (BUDGET_INNER_UPDATE_STRIDE - 1))) {
-      budget_update(util_rdtsc());
+      budget_poll();
     }
 
     conn = (struct connection *) (p - offsetof(struct connection, comp.el));

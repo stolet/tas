@@ -166,7 +166,7 @@ static unsigned cc_poll_vm(int vmid, unsigned n,
   {
     if (UNLIKELY((m & (BUDGET_INNER_UPDATE_STRIDE - 1)) ==
         (BUDGET_INNER_UPDATE_STRIDE - 1))) {
-      budget_update(util_rdtsc());
+      budget_poll();
     }
 
     if (c->status != CONN_OPEN)

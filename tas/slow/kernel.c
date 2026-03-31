@@ -77,7 +77,8 @@ int slowpath_main(int threads_launched)
   struct notify_blockstate nbs;
   uint32_t last_print = 0;
   uint32_t loadmon_ts = 0;
-  uint64_t budget_check_tsc;
+
+  (void) threads_launched;
 
   kernel_notifyfd = eventfd(0, EFD_NONBLOCK);
   assert(kernel_notifyfd != -1);
@@ -99,7 +100,6 @@ int slowpath_main(int threads_launched)
     fprintf(stderr, "timeout_init failed\n");
     return EXIT_FAILURE;
   }
-  budget_init(threads_launched);
 
   /* initialize kni */
   if (kni_init())
@@ -157,26 +157,20 @@ int slowpath_main(int threads_launched)
     
     cur_ts = util_timeout_time_us();
     n += nicif_poll();
-    budget_check_tsc = util_rdtsc();
-    budget_update(budget_check_tsc);
+    budget_poll();
     #if VIRTUOSO_GRE
       n += ovs_poll();
     #endif
     n += cc_poll(cur_ts);
-    budget_check_tsc = util_rdtsc();
-    budget_update(budget_check_tsc);
+    budget_poll();
     n += appif_poll();
-    budget_check_tsc = util_rdtsc();
-    budget_update(budget_check_tsc);
+    budget_poll();
     n += kni_poll();
-    budget_check_tsc = util_rdtsc();
-    budget_update(budget_check_tsc);
+    budget_poll();
     tcp_poll();
-    budget_check_tsc = util_rdtsc();
-    budget_update(budget_check_tsc);
+    budget_poll();
     util_timeout_poll_ts(&timeout_mgr, cur_ts);
-    budget_check_tsc = util_rdtsc();
-    budget_update(budget_check_tsc);
+    budget_poll();
 
     if (config.fp_autoscale && cur_ts - loadmon_ts >= 10000)
     {
@@ -188,8 +182,7 @@ int slowpath_main(int threads_launched)
     {
       slowpath_block(cur_ts);
       notify_canblock_reset(&nbs);
-      budget_check_tsc = util_rdtsc();
-      budget_update(budget_check_tsc);
+      budget_poll();
     }
 
     if (cur_ts - last_print >= 1000000)

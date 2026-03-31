@@ -82,6 +82,7 @@ enum cfg_params {
   CP_FP_POLL_INTERVAL_APP,
   CP_BU_MAX_BUDGET,
   CP_BU_BUDGET_BOOST,
+  CP_BU_DEDICATED,
   CP_BU_USE_RATIO,
   CP_BU_ECN_THRESH,
   CP_BU_UPDATE_FREQ,
@@ -239,6 +240,9 @@ static struct option opts[] = {
     { .name = "bu-boost",
       .has_arg = required_argument,
       .val = CP_BU_BUDGET_BOOST },
+    { .name = "bu-dedicated",
+      .has_arg = no_argument,
+      .val = CP_BU_DEDICATED },
     { .name = "kni-name",
       .has_arg = required_argument,
       .val = CP_KNI_NAME },
@@ -569,6 +573,9 @@ int config_parse(struct configuration *c, int argc, char *argv[])
           goto failed;
         }
         break;
+      case CP_BU_DEDICATED:
+        c->bu_dedicated = 1;
+        break;
       case CP_KNI_NAME:
         if (!(c->kni_name = strdup(optarg))) {
           fprintf(stderr, "strdup kni name failed\n");
@@ -666,6 +673,7 @@ static int config_defaults(struct configuration *c, char *progname)
   c->fp_poll_interval_app = 10000;
   c->bu_max_budget = 210000;
   c->bu_update_freq = 100;
+  c->bu_dedicated = 0;
   c->bu_use_ratio = 0.9;
   c->bu_ecn_thresh = 0.1;
   c->bu_boost = 0.94;
@@ -792,6 +800,8 @@ static void print_usage(struct configuration *c, char *progname)
           "[default: %"PRIu64"]\n"
       "  --bu-boost                  Boost for VM budget "
           "[default: %lf]\n"
+      "  --bu-dedicated              Run budget updates on a dedicated core "
+          "[default: disabled]\n"
       "\n"
       "Host kernel interface:\n"
       "  --kni-name=NAME             Network interface name to expose "

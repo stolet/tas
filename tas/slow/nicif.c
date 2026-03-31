@@ -154,7 +154,7 @@ unsigned nicif_poll(void)
   {
     if (UNLIKELY((i & (BUDGET_INNER_UPDATE_STRIDE - 1)) ==
         (BUDGET_INNER_UPDATE_STRIDE - 1))) {
-      budget_update(util_rdtsc());
+      budget_poll();
     }
 
     x = rxq_poll();

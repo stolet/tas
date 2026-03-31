@@ -198,6 +198,8 @@ int main(int argc, char *argv[])
     goto error_dataplane_cleanup;
   }
 
+  budget_init(threads_launched);
+
   if ((budgets = malloc(sizeof(struct vm_budget *) * threads_launched)) 
       == NULL)
   {
@@ -271,10 +273,11 @@ static int start_threads(void)
 {
   unsigned cores_avail, cores_needed, core;
   void *arg;
+  int budget_thread_started = 0;
 
   cores_avail = rte_lcore_count();
-  /* fast path cores + one slow path core */
-  cores_needed = fp_cores_max + 1;
+  /* fast path cores + one slow path core + optional budget core */
+  cores_needed = fp_cores_max + 1 + (config.bu_dedicated ? 1 : 0);
 
   if ((ctxs = rte_calloc("context list", fp_cores_max, sizeof(*ctxs), 64)) == NULL) {
     perror("datplane_init: calloc failed");
@@ -293,11 +296,28 @@ static int start_threads(void)
     if (threads_launched < fp_cores_max) {
       arg = (void *) (uintptr_t) threads_launched;
       if (rte_eal_remote_launch(common_thread, arg, core) != 0) {
-	fprintf(stderr, "ERROR\n");
+        fprintf(stderr, "Launching fast path thread on lcore %u failed\n",
+            core);
         return -1;
       }
       threads_launched++;
+      continue;
     }
+
+    if (config.bu_dedicated && !budget_thread_started) {
+      if (rte_eal_remote_launch(budget_thread, NULL, core) != 0) {
+        fprintf(stderr, "Launching dedicated budget thread on lcore %u "
+            "failed\n", core);
+        return -1;
+      }
+      budget_thread_started = 1;
+      break;
+    }
+  }
+
+  if (config.bu_dedicated && !budget_thread_started) {
+    fprintf(stderr, "Not enough worker cores for dedicated budget thread\n");
+    return -1;
   }
 
   return threads_launched;

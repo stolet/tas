@@ -24,6 +24,9 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <stdatomic.h>
+
+#include <rte_pause.h>
 
 #include <budget_debug.h>
 #include <tas.h>
@@ -34,6 +37,7 @@
 
 static void init_vm_weights(double *weights);
 static void slow_budget_boost(int vmid, int64_t incr);
+static void budget_update(uint64_t cur_tsc);
 
 uint64_t get_budget_delta(int vmid, int ctxid);
 void boost_budget(int vmid, int ctxid, int64_t incr);
@@ -49,6 +53,7 @@ static uint64_t last_bu_update_ts = 0;
 static uint64_t budget_ts = 0;
 static uint64_t budget_period_tsc = 0;
 static int budget_threads_launched = 0;
+static atomic_int budget_ready = 0;
 static struct budget_statistics slow_budgets[FLEXNIC_PL_VMST_NUM];
 
 void budget_init(int threads_launched)
@@ -68,9 +73,34 @@ void budget_init(int threads_launched)
     slow_budgets[vmid].cycles_rx = 0;
     slow_budgets[vmid].cycles_total = 0;
   }
+
+  atomic_store_explicit(&budget_ready, 1, memory_order_release);
 }
 
-void budget_update(uint64_t cur_tsc)
+void budget_poll(void)
+{
+  if (!config.bu_dedicated) {
+    budget_update(util_rdtsc());
+  }
+}
+
+int budget_thread(void *arg)
+{
+  (void) arg;
+
+  while (atomic_load_explicit(&budget_ready, memory_order_acquire) == 0) {
+    rte_pause();
+  }
+
+  while (1) {
+    budget_update(util_rdtsc());
+    rte_pause();
+  }
+
+  return 0;
+}
+
+static void budget_update(uint64_t cur_tsc)
 {
   uint32_t vmid, ctxid;
   uint16_t vm_count;
@@ -86,7 +116,7 @@ void budget_update(uint64_t cur_tsc)
   uint16_t vm_ids[FLEXNIC_PL_VMST_NUM];
 #endif
 
-  if (cur_tsc - budget_ts < budget_period_tsc) 
+  if (cur_tsc - budget_ts < budget_period_tsc)
     return;
   
   budget_ts = cur_tsc;

@@ -142,6 +142,8 @@ struct configuration {
   uint64_t bu_update_freq;
   /** Boost for the budget */
   double bu_boost;
+  /** Run budget updates on a dedicated DPDK core */
+  uint32_t bu_dedicated;
   /** VM budget used before rellocating to other VMs */
   double bu_use_ratio;
   /** Relative budget threshold below which transmitted packets set TCP ECE; 0 disables */
