@@ -503,6 +503,7 @@ int tas_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
   struct flextcp_context *ctx;
   struct socket_backlog *bl;
   int ret = 0, nonblock = 0, cloexec = 0, newfd, block;
+  int ready_off, failed_off;
 
   if (flextcp_fd_slookup(sockfd, &s) != 0) {
     errno = EBADF;
@@ -535,40 +536,126 @@ int tas_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
   ctx = flextcp_sockctx_get();
   block = 0;
   while (1) {
-    /* grab next pending accept */
+    /* make sure we have backlog state to inspect */
     if (sl->backlog_num == 0 && enqueue_accept(ctx, s)) {
       errno = ENOBUFS;
       ret = -1;
       goto out;
     }
-    bl = sl->backlog + sl->backlog_next;
-    ns = bl->s;
-    newfd = bl->fd;
 
-    socket_lock(ns);
-    if (ns->data.connection.status != SOC_CONNECTING) {
-      /* connection is ready */
-      break;
-    } else {
-      /* connection is still pending */
-      socket_unlock(ns);
+    ready_off = -1;
+    failed_off = -1;
+    for (int off = 0; off < sl->backlog_num; off++) {
+      bl = sl->backlog + ((sl->backlog_next + off) % sl->backlog_len);
+      ns = bl->s;
+      socket_lock(ns);
 
-      if ((s->flags & SOF_NONBLOCK) == SOF_NONBLOCK) {
-        /* if non-blocking, just return */
-        errno = EAGAIN;
-        ret = -1;
-        goto out;
-      } else {
-        /* if this is blocking, wait for a connection to complete */
-        socket_unlock(s);
-
-        if (block)
-          flextcp_context_wait(ctx, -1);
-        flextcp_sockctx_poll(ctx);
-        block = 1;
-
-        socket_lock(s);
+      if (ns->data.connection.status == SOC_CONNECTED) {
+        ready_off = off;
+        newfd = bl->fd;
+        break;
       }
+
+      if (ns->data.connection.status == SOC_FAILED) {
+        failed_off = off;
+        socket_unlock(ns);
+        break;
+      }
+
+      socket_unlock(ns);
+    }
+
+    if (failed_off >= 0) {
+      int failed_idx = (sl->backlog_next + failed_off) % sl->backlog_len;
+
+      if (failed_off != 0) {
+        struct socket_backlog tmp = sl->backlog[sl->backlog_next];
+        sl->backlog[sl->backlog_next] = sl->backlog[failed_idx];
+        sl->backlog[failed_idx] = tmp;
+      }
+
+      bl = sl->backlog + sl->backlog_next;
+      flextcp_fd_close(bl->fd);
+      sl->backlog_next = (sl->backlog_next + 1) % sl->backlog_len;
+      --sl->backlog_num;
+      enqueue_accept(ctx, s);
+      continue;
+    }
+
+    if (ready_off >= 0) {
+      int ready_idx = (sl->backlog_next + ready_off) % sl->backlog_len;
+
+      if (ready_off != 0) {
+        struct socket_backlog tmp = sl->backlog[sl->backlog_next];
+        sl->backlog[sl->backlog_next] = sl->backlog[ready_idx];
+        sl->backlog[ready_idx] = tmp;
+      }
+      break;
+    }
+
+    /* We still need to poll the TAS context once for non-blocking listeners,
+     * otherwise busy accept loops never observe listen-completion events. */
+    socket_unlock(s);
+    if (block && (s->flags & SOF_NONBLOCK) == 0)
+      flextcp_context_wait(ctx, -1);
+    flextcp_sockctx_poll(ctx);
+    block = 1;
+    socket_lock(s);
+
+    if ((s->flags & SOF_NONBLOCK) == SOF_NONBLOCK) {
+      ready_off = -1;
+      failed_off = -1;
+      for (int off = 0; off < sl->backlog_num; off++) {
+        bl = sl->backlog + ((sl->backlog_next + off) % sl->backlog_len);
+        ns = bl->s;
+        socket_lock(ns);
+
+        if (ns->data.connection.status == SOC_CONNECTED) {
+          ready_off = off;
+          newfd = bl->fd;
+          break;
+        }
+
+        if (ns->data.connection.status == SOC_FAILED) {
+          failed_off = off;
+          socket_unlock(ns);
+          break;
+        }
+
+        socket_unlock(ns);
+      }
+
+      if (failed_off >= 0) {
+        int failed_idx = (sl->backlog_next + failed_off) % sl->backlog_len;
+
+        if (failed_off != 0) {
+          struct socket_backlog tmp = sl->backlog[sl->backlog_next];
+          sl->backlog[sl->backlog_next] = sl->backlog[failed_idx];
+          sl->backlog[failed_idx] = tmp;
+        }
+
+        bl = sl->backlog + sl->backlog_next;
+        flextcp_fd_close(bl->fd);
+        sl->backlog_next = (sl->backlog_next + 1) % sl->backlog_len;
+        --sl->backlog_num;
+        enqueue_accept(ctx, s);
+        continue;
+      }
+
+      if (ready_off >= 0) {
+        int ready_idx = (sl->backlog_next + ready_off) % sl->backlog_len;
+
+        if (ready_off != 0) {
+          struct socket_backlog tmp = sl->backlog[sl->backlog_next];
+          sl->backlog[sl->backlog_next] = sl->backlog[ready_idx];
+          sl->backlog[ready_idx] = tmp;
+        }
+        break;
+      }
+
+      errno = EAGAIN;
+      ret = -1;
+      goto out;
     }
   }
 
@@ -786,7 +873,7 @@ int tas_getsockopt(int sockfd, int level, int optname, void *optval,
   /* copy result to optval, truncate if necessary */
   len = MIN(*optlen, sizeof(res));
   memcpy(optval, &res, len);
-  *optlen = res;
+  *optlen = len;
 
 out:
   flextcp_fd_srelease(sockfd, s);
