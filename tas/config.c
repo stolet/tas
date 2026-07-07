@@ -77,6 +77,8 @@ enum cfg_params {
   CP_FP_NO_RSS,
   CP_FP_NO_HUGEPAGES,
   CP_FP_VLAN_STRIP,
+  CP_FP_PAUSE,
+  CP_FP_PAUSE_IDLE,
   CP_FP_POLL_INTERVAL_TAS,
   CP_FP_POLL_INTERVAL_APP,
   CP_KNI_NAME,
@@ -213,6 +215,12 @@ static struct option opts[] = {
     { .name = "fp-vlan-strip",
       .has_arg = no_argument,
       .val = CP_FP_VLAN_STRIP },
+    { .name = "fp-pause",
+      .has_arg = no_argument,
+      .val = CP_FP_PAUSE },
+    { .name = "fp-pause-idle",
+      .has_arg = required_argument,
+      .val = CP_FP_PAUSE_IDLE },
     { .name = "fp-poll-interval-tas",
       .has_arg = required_argument,
       .val = CP_FP_POLL_INTERVAL_TAS },
@@ -506,6 +514,15 @@ int config_parse(struct configuration *c, int argc, char *argv[])
       case CP_FP_VLAN_STRIP:
         c->fp_vlan_strip = 1;
         break;
+      case CP_FP_PAUSE:
+        c->fp_pause = 1;
+        break;
+      case CP_FP_PAUSE_IDLE:
+        if (parse_int32(optarg, &c->fp_pause_idle) != 0) {
+          fprintf(stderr, "fp pause idle parsing failed\n");
+          goto failed;
+        }
+        break;
       case CP_FP_POLL_INTERVAL_TAS:
         if (parse_int32(optarg, &c->fp_poll_interval_tas) != 0) {
           fprintf(stderr, "fp tas poll interval parsing failed\n");
@@ -611,6 +628,8 @@ static int config_defaults(struct configuration *c, char *progname)
   c->fp_rss = 1;
   c->fp_hugepages = 1;
   c->fp_vlan_strip = 0;
+  c->fp_pause = 0;
+  c->fp_pause_idle = 16;
   c->fp_poll_interval_tas = 10000;
   c->fp_poll_interval_app = 10000;
   c->kni_name = NULL;
@@ -717,6 +736,10 @@ static void print_usage(struct configuration *c, char *progname)
           "[default: enabled]\n"
       "  --fp-no-hugepages           Disable hugepages for SHM "
           "[default: enabled]\n"
+      "  --fp-pause                  Use PAUSE while idle polling "
+          "[default: disabled]\n"
+      "  --fp-pause-idle=LOOPS       Idle poll loops before PAUSE "
+          "[default: %"PRIu32"]\n"
       "  --fp-poll-interval-tas      TAS polling interval before blocking "
           "in us [default: %"PRIu32"]\n"
       "  --fp-poll-interval-app      App polling interval before blocking "
@@ -744,7 +767,8 @@ static void print_usage(struct configuration *c, char *progname)
       (double) c->cc_timely_alpha / UINT32_MAX,
       (double) c->cc_timely_beta / UINT32_MAX, c->cc_timely_min_rtt,
       c->cc_timely_min_rate, c->arp_to, c->arp_to_max,
-      c->fp_cores_max, c->fp_poll_interval_tas, c->fp_poll_interval_app);
+      c->fp_cores_max, c->fp_pause_idle, c->fp_poll_interval_tas,
+      c->fp_poll_interval_app);
 }
 
 static inline int parse_int64(const char *s, uint64_t *pi)

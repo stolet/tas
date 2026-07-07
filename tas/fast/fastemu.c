@@ -32,6 +32,7 @@
 #include <rte_cycles.h>
 
 #include <tas_memif.h>
+#include <utils_sync.h>
 
 #include "internal.h"
 #include "fastemu.h"
@@ -143,6 +144,7 @@ void dataplane_loop(struct dataplane_context *ctx)
 {
   struct notify_blockstate nbs;
   uint32_t ts;
+  uint32_t idle_loops = 0;
   uint64_t cyc, prev_cyc;
   int was_idle = 1;
 
@@ -181,7 +183,19 @@ void dataplane_loop(struct dataplane_context *ctx)
     if (ctx->id == 0)
       poll_scale(ctx);
 
-    was_idle = (n == 0);
+    if (n == 0) {
+      was_idle = 1;
+      if (config.fp_pause) {
+        if (idle_loops < config.fp_pause_idle)
+          idle_loops++;
+        if (idle_loops >= config.fp_pause_idle)
+          util_pause();
+      }
+    } else {
+      was_idle = 0;
+      idle_loops = 0;
+    }
+
     if (config.fp_interrupts && notify_canblock(&nbs, !was_idle, cyc)) {
       dataplane_block(ctx, ts);
       notify_canblock_reset(&nbs);

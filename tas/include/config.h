@@ -127,6 +127,10 @@ struct configuration {
   uint32_t fp_hugepages;
   /** FP: enable vlan stripping */
   uint32_t fp_vlan_strip;
+  /** FP: use pause instruction while idle polling */
+  uint32_t fp_pause;
+  /** FP: idle poll loops before using pause */
+  uint32_t fp_pause_idle;
   /** FP: polling interval for TAS */
   uint32_t fp_poll_interval_tas;
   /** FP: polling interval for app */

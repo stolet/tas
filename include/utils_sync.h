@@ -39,6 +39,11 @@
 
 #include <stdint.h>
 
+static inline void util_pause(void)
+{
+  asm volatile ("pause" ::: "memory");
+}
+
 static inline void util_spin_lock(volatile uint32_t *sl)
 {
   uint32_t lock_val = 1;
