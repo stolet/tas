@@ -37,7 +37,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-#define FLEXTCP_MAX_CONTEXTS 32
+#define FLEXTCP_MAX_CONTEXTS 128
 #define FLEXTCP_MAX_FTCPCORES 16
 
 /**
