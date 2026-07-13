@@ -38,7 +38,7 @@
 #include <sys/types.h>
 
 #define FLEXTCP_MAX_CONTEXTS 128
-#define FLEXTCP_MAX_FTCPCORES 16
+#define FLEXTCP_MAX_FTCPCORES 32
 
 /**
  * A flextcp context is per-thread state for the stack. (opaque)
