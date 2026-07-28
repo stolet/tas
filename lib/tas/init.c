@@ -170,7 +170,7 @@ static int kernel_poll(struct flextcp_context *ctx, int num,
       event_kappin_st_listen_open(&kout->data.status, &events[i]);
     } else if (type == KERNEL_APPIN_STATUS_CONN_MOVE) {
       event_kappin_st_conn_move(&kout->data.status, &events[i]);
-    } else if (KERNEL_APPIN_STATUS_LISTEN_MOVE) {
+    } else if (type == KERNEL_APPIN_STATUS_LISTEN_MOVE) {
       event_kappin_st_listen_move(&kout->data.status, &events[i]);
     } else if (type == KERNEL_APPIN_STATUS_CONN_CLOSE) {
       event_kappin_st_conn_closed(&kout->data.status, &events[i]);
@@ -630,7 +630,7 @@ static inline void event_kappin_listen_newconn(
   outev->ev.listen_newconn.out_remote_ip = inev->out_remote_ip;
   outev->ev.listen_newconn.in_remote_ip = inev->in_remote_ip;
   outev->ev.listen_newconn.remote_port = inev->remote_port;
-  outev->ev.listen_open.listener = listener;
+  outev->ev.listen_newconn.listener = listener;
 }
 
 static inline int event_kappin_accept_conn(
